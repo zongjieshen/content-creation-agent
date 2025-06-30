@@ -7,6 +7,7 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 import random
+import tempfile
 from typing import TypedDict, Optional
 from ..base_workflow import BaseWorkflow, BaseWorkflowState
 from langgraph.graph import END
@@ -34,14 +35,14 @@ class InstagramCollaborationFinder:
         Args:
             niche (str): Your content niche (e.g., fitness, beauty, travel)
             location (str): Your location for region-specific collaborations
-            output_dir (str): Directory to save results (default: project root)
+            output_dir (str): Directory to save results (default: system temp directory)
         """
         self.niche = niche
         self.location = location
         
-        # Set default output directory if not provided
+        # Set default output directory to system temp directory if not provided
         if output_dir is None:
-            self.output_dir = Path(__file__).parent.parent / "collaboration_opportunities"
+            self.output_dir = Path(tempfile.gettempdir()) / "content_creation_agent_csv"
         else:
             self.output_dir = Path(output_dir)
             
