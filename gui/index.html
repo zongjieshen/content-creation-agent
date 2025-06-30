@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leads Workflow Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- CodeMirror CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/monokai.min.css">
+    <!-- CodeMirror JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/yaml/yaml.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Leads Dashboard</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <button id="config-editor-btn" class="btn btn-secondary" title="Edit Configuration">
+                    <i class="fas fa-cog"></i>
+                    <span>Edit Config</span>
+                </button>
+                <div class="session-info">
+                    <span id="session-status">Initializing...</span>
+                    <button id="refresh-session-btn" class="btn btn-small" title="Start a new session">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-container">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <nav class="nav-menu">
+                    <div class="nav-item active" data-tab="search">
+                        <i class="fas fa-search"></i>
+                        <span>Search</span>
+                    </div>
+                    <div class="nav-item" data-tab="message">
+                        <i class="fas fa-comments"></i>
+                        <span>Message</span>
+                    </div>
+                </nav>
+            </aside>
+
+            <!-- Main Content -->
+            <main class="content">
+                <!-- Search Tab -->
+                <div id="search-tab" class="tab-content active">
+                    <div class="tab-header">
+                        <h2><i class="fas fa-search"></i> Instagram Collaboration Search</h2>
+                        <p>Find Instagram profiles for collaboration opportunities</p>
+                    </div>
+                    
+                    <div class="search-form-container">
+                        <form id="search-form" class="search-form">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="niche">Niche</label>
+                                    <input type="text" id="niche" name="niche" placeholder="e.g., fitness, beauty, tech" required>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="location">Location</label>
+                                    <input type="text" id="location" name="location" placeholder="e.g., New York, London">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="max_results">Max Results</label>
+                                    <input type="number" id="max_results" name="max_results" value="50" min="1" max="500">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="max_pages">Max Pages</label>
+                                    <input type="number" id="max_pages" name="max_pages" value="5" min="1" max="20">
+                                </div>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary" id="search-btn">
+                                <i class="fas fa-search"></i>
+                                Start Search
+                            </button>
+                        </form>
+                    </div>
+                    
+                    <div id="search-results" class="results-container" style="display: none;">
+                        <div class="results-header">
+                            <h3>Search Results</h3>
+                            <div class="results-actions">
+                                <button id="download-csv" class="btn btn-secondary">
+                                    <i class="fas fa-download"></i>
+                                    Download CSV
+                                </button>
+                                <button id="use-for-messaging" class="btn btn-primary">
+                                    <i class="fas fa-arrow-right"></i>
+                                    Use for Messaging
+                                </button>
+                            </div>
+                        </div>
+                        <div id="results-table-container">
+                            <!-- Results table will be inserted here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Message Tab -->
+                <div id="message-tab" class="tab-content">
+                    <div class="tab-header">
+                        <h2><i class="fas fa-comments"></i> Instagram Messaging</h2>
+                        <p>Automate messaging to Instagram profiles</p>
+                    </div>
+                    
+                    <div class="messaging-container">
+                        <div class="csv-upload-section">
+                            <div class="upload-area" id="csv-upload-area">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                                <p>Upload CSV file or use search results</p>
+                                <input type="file" id="csv-file" accept=".csv" style="display: none;">
+                                <button type="button" class="btn btn-secondary" id="csv-upload-btn">
+                                    <i class="fas fa-upload"></i>
+                                    Choose File
+                                </button>
+                            </div>
+                            <div id="csv-status" class="csv-status">No file selected</div>
+                        </div>
+                        
+                        <div class="chat-container">
+                            <div class="chat-messages" id="chat-messages">
+                                <div class="message assistant">
+                                    <div class="message-content">
+                                        Welcome to Instagram Messaging! Upload a CSV file or use search results to get started.
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="interrupt-options" id="interrupt-options" style="display: none;">
+                                <!-- Interrupt option buttons will be inserted here -->
+                            </div>
+                            
+                            <div class="chat-input-container">
+                                <div class="chat-input">
+                                    <textarea id="message-input" placeholder="Type your message..." disabled rows="1"></textarea>
+                                    <button id="send-btn" class="btn btn-primary" disabled>
+                                        <i class="fas fa-paper-plane"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Processing...</p>
+            <button id="cancel-btn" class="btn btn-danger">
+                <i class="fas fa-times"></i>
+                Cancel
+            </button>
+        </div>
+    </div>
+
+    <!-- CSV Editor Modal -->
+    <div id="csv-editor-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Edit CSV Data</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="csv-editor-controls">
+                    <div class="search-filter">
+                        <input type="text" id="csv-search" placeholder="Search profiles...">
+                    </div>
+                    <div class="csv-actions">
+                        <button id="save-csv-changes" class="btn btn-primary"><i class="fas fa-save"></i> Save Changes</button>
+                    </div>
+                </div>
+                <div id="csv-editor-table-container" class="csv-editor-table-container">
+                    <!-- Table will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Existing modals and scripts -->
+    
+    <!-- Config Editor Modal -->
+    <div id="config-editor-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Edit Configuration</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="config-editor-controls">
+                    <div class="config-actions">
+                        <button id="save-config-changes" class="btn btn-primary"><i class="fas fa-save"></i> Save Changes</button>
+                    </div>
+                </div>
+                <div class="config-editor-container">
+                    <div id="config-editor"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

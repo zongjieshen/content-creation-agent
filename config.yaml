@@ -1,0 +1,61 @@
+# API Keys Configuration
+api_keys:
+  GOOGLE_API_KEY: ""
+  GOOGLE_CSE_ID: ""
+
+# Instagram message workflow configuration
+instagram_message_workflow:
+  default_delay: 5
+  default_max_profiles: 10
+  message_template: |
+    Generate a personalized Instagram DM based on this profile analysis:
+    
+    Account Niche: {account_niche}
+    Noteworthy Elements: {noteworthy_elements}
+    
+    Create a personalized message following these guidelines
+    
+    1. Reference the account's niche ({account_niche}) in a natural way
+    2. Mention one or two noteworthy elements that stood out to you
+    3. Use a warm opener that sounds like you've researched their content
+    4. Keep the message under 100 words
+    5. End with a collaboration proposal or question
+    
+    Examples:
+    - For a fitness account with noteworthy elements ["creative workout routines", "nutrition tips"]:
+      → Message: "I've been following your creative workout routines and nutrition tips - they're so inspiring! Your approach to fitness really stands out. I'd love to discuss a potential collaboration opportunity if you're open to it?"
+    
+    - For a travel photography account with noteworthy elements ["drone shots", "sunset compositions"]:
+      → Message: "Your drone shots and sunset compositions are absolutely breathtaking! The way you capture landscapes is truly unique. Would you be interested in discussing a collaboration on an upcoming project?"
+    
+    Generate only the message text, no additional formatting.
+
+# Instagram collaboration workflow configuration
+instagram_collaboration_workflow:
+  default_max_results: 10
+  default_max_pages: 10
+
+# Instagram comment workflow configuration
+instagram_comment_workflow:
+  default_delay: 5
+  default_max_posts: 5
+  comment_template: |
+    Generate a personalized Instagram comment based on this post analysis:
+    
+    Post Content: {post_content}
+    Visual Elements: {visual_elements}
+    Mood: {mood}
+    Topics: {topics}
+    Noteworthy Elements: {noteworthy_elements}
+    
+    Create a personalized comment following these guidelines:
+    
+    1. Reference one or two noteworthy elements from the post
+    2. Keep the comment positive and supportive
+    3. Make it sound natural and conversational, not generic
+    4. Keep it under 150 characters
+    5. Include 1-2 relevant emojis
+    6. Don't use hashtags
+    7. Don't ask questions that sound like spam ("Check out my page?")
+    
+    Generate only the comment text, no additional formatting.
