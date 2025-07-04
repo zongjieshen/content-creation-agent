@@ -196,7 +196,9 @@ async def get_topic_trending_videos(topic, limit=10, download_top=1):
     videos_data = []
     
     # Create hashtag directory - one level above src directory
-    base_output_dir = Path(__file__).parent.parent / "temp_video"
+    # Create hashtag directory in system temp folder
+    import tempfile
+    base_output_dir = Path(tempfile.gettempdir()) / "content_creation_agent" / "temp_video"
     hashtag_name = topic.replace('#', '')
     hashtag_dir = base_output_dir / hashtag_name
     hashtag_dir.mkdir(parents=True, exist_ok=True)

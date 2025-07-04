@@ -19,9 +19,10 @@ import uvicorn
 import bleach
 
 # Import workflow classes
-from .instagram_collaboration_workflow import InstagramCollaborationWorkflow
-from .instagram_message_workflow import InstagramMessageWorkflow
-from ..base_workflow import BaseWorkflow
+from src.leads.instagram_collaboration_workflow import InstagramCollaborationWorkflow
+from src.leads.instagram_message_workflow import InstagramMessageWorkflow
+from src.video_analysis_workflow import VideoAnalysisWorkflow
+from src.base_workflow import BaseWorkflow
 
 active_workflows = {}
 # Set up logging
@@ -178,6 +179,7 @@ async def startup_event():
         # Initialize workflow instances
         app.collaboration_workflow = InstagramCollaborationWorkflow()
         app.messaging_workflow = InstagramMessageWorkflow()
+        app.video_analysis_workflow = VideoAnalysisWorkflow()
         
         logger.info("Leads server initialization completed successfully")
         
@@ -235,6 +237,8 @@ async def generate_workflow_response(
         workflow = app.collaboration_workflow
     elif prompt.workflow_type == "messaging":
         workflow = app.messaging_workflow
+    elif prompt.workflow_type == "video_analysis":
+        workflow = app.video_analysis_workflow
     else:
         raise HTTPException(status_code=400, detail="Invalid workflow type")
     
@@ -390,6 +394,8 @@ async def generate_workflow_response(
             elif "automation_result" in result:
                 automation_result = result["automation_result"]
                 resp_str = automation_result.get("message", "Messaging automation completed successfully.")
+            elif "summary_report" in result:
+                resp_str = f"Video analysis completed. {result.get('summary_report')[:500]}..."
             else:
                 resp_str = "Workflow completed successfully."
             
@@ -447,6 +453,11 @@ async def list_workflows():
                 "type": "messaging",
                 "name": "Instagram Messaging Automation",
                 "description": "Automate messaging to Instagram profiles"
+            },
+            {
+                "type": "video_analysis",
+                "name": "TikTok Video Analysis",
+                "description": "Analyze TikTok videos for a given keyword or hashtag"
             }
         ]
     }
