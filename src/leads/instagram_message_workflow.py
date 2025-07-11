@@ -3,18 +3,16 @@ import csv
 import asyncio
 import logging
 import os
-import re
-# Around line 7, update the imports:
 from pathlib import Path
-# Remove this line since we're using load_environment instead
-# from dotenv import load_dotenv
-from src.utils.resource_path import get_resource_path
 from src.utils.env_loader import load_environment
+from datetime import datetime
+from src.utils.db_client import get_db_context
+from src.utils.config_loader import get_config
 
 # Use only load_environment()
 load_environment()
 from playwright.async_api import async_playwright
-from src.base_workflow import BaseWorkflow, BaseWorkflowState, InterruptConfig
+from src.base_workflow import BaseWorkflow, BaseWorkflowState, InterruptConfig, check_cancellation
 from langgraph.graph import END
 import hashlib
 import yaml
@@ -28,9 +26,6 @@ from src.leads.instagram_automator_helpers import (
     generate_personalized_message
 )
 
-# Load environment variables from .env file
-# Remove this duplicate load_dotenv() call
-# load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -105,12 +100,12 @@ class InstagramMessageAutomator:
                 '--hide-scrollbars',
                 '--mute-audio'
             ],
-            viewport={'width': 1280, 'height': 1400},
+            viewport={'width': 600, 'height': 900},
             user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
             locale='en-US',
             timezone_id='America/New_York',
             color_scheme='light',
-            device_scale_factor=1.0,
+            device_scale_factor=0.3,
             is_mobile=False
         )
         
@@ -178,6 +173,13 @@ class InstagramMessageAutomator:
     async def analyze_profile(self, profile_url, state):
         """Analyze an Instagram profile and determine if it's suitable for messaging."""
         try:
+            # Check if this profile has been messaged before
+            already_messaged = await check_if_profile_messaged(profile_url)
+            if already_messaged:
+                self.logger.info(f"Skipping {profile_url} as it has been messaged before")
+                state["current_profile_url"] = None
+                return False, state
+                
             # Navigate to the profile
             await self.page.goto(profile_url)
             await add_random_delays(1, 3, self.logger)
@@ -331,7 +333,14 @@ class InstagramMessageAutomator:
         try:
             # Send the message programmatically after confirmation
             await self.page.keyboard.press('Enter')
-            self.logger.info(f"Message sent after confirmation: '{state.get('message_text')}'")            
+            self.logger.info(f"Message sent after confirmation: '{state.get('message_text')}'")
+            
+            # Record the sent message in the database
+            profile_url = state.get("current_profile_url")
+            message_text = state.get("message_text")
+            if profile_url and message_text:
+                await record_sent_message(profile_url, message_text)
+                
             # Add a delay after sending
             await add_random_delays(1.0, 3.0, self.logger)            
             await add_delay(2, self.logger)  # Final delay before going back
@@ -573,11 +582,8 @@ class InstagramMessageWorkflow(BaseWorkflow):
             csv_path = None
             state["error_message"] = "No uploaded CSV file found. Please upload a CSV file with Instagram profiles."
         
-        # Load configuration from config.yaml file
         try:
-            config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config.yaml")
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
+            config = get_config()
                 
             # Get default values from config
             instagram_config = config.get('instagram_message_workflow', {})
@@ -801,6 +807,7 @@ class InstagramMessageWorkflow(BaseWorkflow):
         else:  # "skip" or any other value
             return "skip_profile"
     
+
     async def prepare_message(self, state: InstagramMessageState):
         """Prepare and type the message into Instagram DM."""
         state = self.update_step(state, "message_preparation")
@@ -814,12 +821,13 @@ class InstagramMessageWorkflow(BaseWorkflow):
         
         return state
     
+    @check_cancellation
     async def send_message(self, state: InstagramMessageState):
         """Send the message after confirmation"""
         state = self.update_step(state, "message_sending")
         
         try:
-            # Send the message
+            # Send the mess
             success = await self.automator.send_message(state)
             
             if success:
@@ -864,6 +872,43 @@ class InstagramMessageWorkflow(BaseWorkflow):
         
         state["workflow_status"] = "completed"
         return state
+
+
+# helper function
+async def check_if_profile_messaged(profile_url):
+    """Check if a profile has already been messaged"""
+    try:
+        with get_db_context() as (conn, cursor):
+            # Extract username from profile URL
+            username = profile_url.split('/')[-2] if profile_url.endswith('/') else profile_url.split('/')[-1]
+            
+            # Check by both profile URL and username for robustness
+            cursor.execute(
+                "SELECT * FROM sent_messages WHERE profile_url = ? OR username = ?", 
+                (profile_url, username)
+            )
+            result = cursor.fetchone()
+            
+            if result:
+                return True
+            return False
+    except Exception as e:
+        return False
+
+async def record_sent_message(profile_url, message_text, success=True):
+    """Record a sent message in the database"""
+    try:
+        # Extract username from profile URL
+        username = profile_url.split('/')[-2] if profile_url.endswith('/') else profile_url.split('/')[-1]
+        
+        with get_db_context() as (conn, cursor):
+            cursor.execute(
+                "INSERT OR REPLACE INTO sent_messages (profile_url, username, message_text, sent_date, success) VALUES (?, ?, ?, ?, ?)",
+                (profile_url, username, message_text, datetime.now().isoformat(), 1 if success else 0)
+            )
+            return True
+    except Exception as e:
+        return False
 
 async def main():
     # Path to the CSV file

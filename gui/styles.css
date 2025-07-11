@@ -5,6 +5,12 @@
     box-sizing: border-box;
 }
 
+html, body {
+    height: 100%;
+    width: 100%;
+    overflow-x: hidden;
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     background-color: #f5f5f7;
@@ -15,8 +21,10 @@ body {
 /* App Container */
 .app-container {
     height: 100vh;
+    width: 100vw;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 /* Header */
@@ -69,6 +77,7 @@ body {
     flex: 1;
     display: flex;
     overflow: hidden;
+    position: relative;
 }
 
 /* Sidebar */
@@ -78,6 +87,55 @@ body {
     border-right: 1px solid #e5e5e7;
     padding: 24px 0;
     overflow-y: auto;
+    overflow-x: hidden; /* Add this line to prevent horizontal scrolling */
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.sidebar.collapsed {
+    width: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* Sidebar Toggle Button */
+.sidebar-toggle {
+    position: absolute;
+    top: 10px;
+    right: -40px;
+    width: 32px;
+    height: 32px;
+    background: #ffffff;
+    border: 1px solid #e5e5e7;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 101;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+}
+
+.sidebar-toggle i {
+    color: #007aff;
+    font-size: 14px;
+}
+
+/* Position the toggle button when sidebar is collapsed */
+.sidebar.collapsed .sidebar-toggle {
+    right: -16px; /* Position closer to the edge when collapsed */
+    left: auto; /* Ensure it's positioned from the right */
+}
+
+/* When sidebar is collapsed, position the toggle button at the edge of the screen */
+.main-container:has(.sidebar.collapsed) .sidebar-toggle {
+    position: fixed;
+    left: 0;
+    top: 70px; /* Position below the header */
+    right: auto;
+    border-radius: 0 50% 50% 0; /* Round only the right side */
+    border-left: none;
 }
 
 .nav-menu {
@@ -116,8 +174,10 @@ body {
 /* Content Area */
 .content {
     flex: 1;
-    overflow-y: hidden; /* Changed from auto to hidden */
+    overflow-y: auto;
     background: #f5f5f7;
+    padding: 24px;
+    max-width: 100%;
 }
 
 .tab-content {
@@ -560,6 +620,19 @@ body {
         width: 100%;
         height: auto;
         padding: 16px 0;
+        border-right: none;
+        border-bottom: 1px solid #e5e5e7;
+    }
+    
+    .sidebar.collapsed {
+        height: 0;
+        padding: 0;
+    }
+    
+    .sidebar-toggle {
+        top: auto;
+        right: 10px;
+        bottom: -16px;
     }
     
     .nav-menu {
@@ -572,6 +645,10 @@ body {
         white-space: nowrap;
         margin-right: 8px;
         margin-bottom: 0;
+    }
+    
+    .content {
+        padding: 16px;
     }
     
     .messaging-container {
@@ -592,6 +669,10 @@ body {
     .results-actions {
         justify-content: center;
     }
+}
+
+.full-width {
+    grid-column: 1 / -1;
 }
 
 /* Animations */
@@ -626,6 +707,182 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
     background: #8e8e93;
+}
+
+/* Video Analysis Styles */
+.video-analysis-container {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.video-upload-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.video-status {
+    font-size: 14px;
+    color: #8e8e93;
+    padding: 8px 0;
+}
+
+.video-status.success {
+    color: #34c759;
+}
+
+.video-status.error {
+    color: #ff3b30;
+}
+
+.analysis-options {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 16px;
+    background: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.toggle-label-left, .toggle-label-right {
+    min-width: 60px; /* Ensures consistent spacing */
+    text-align: center;
+    font-size: 14px;
+}
+
+.toggle-label-left {
+    margin-right: 8px;
+    color: #007aff;
+}
+
+.toggle-label-right {
+    margin-left: 8px;
+    color: #8e8e93;
+}
+
+.toggle-switch input:checked ~ .toggle-slider + .toggle-label-left {
+    color: #8e8e93;
+}
+
+.toggle-switch input:checked ~ .toggle-slider ~ .toggle-label-right {
+    color: #007aff;
+}
+
+/* Hide the inactive label */
+.toggle-switch input:not(:checked) ~ .toggle-slider ~ .toggle-label-right {
+    display: none;
+}
+
+.toggle-switch input:checked ~ .toggle-slider ~ .toggle-label-left {
+    display: none;
+}
+
+.analysis-results-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.result-box {
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.result-box h4 {
+    margin-bottom: 12px;
+    color: #1d1d1f;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.result-content {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #3a3a3c;
+    min-height: 100px;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+}
+
+.hashtags {
+    word-break: break-all;
+}
+
+/* Toggle Switch Styles */
+.toggle-switch-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #e5e5ea;
+    transition: .4s;
+    border-radius: 24px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .toggle-slider {
+    background-color: #007aff;
+}
+
+input:focus + .toggle-slider {
+    box-shadow: 0 0 1px #007aff;
+}
+
+input:checked + .toggle-slider:before {
+    transform: translateX(26px);
+}
+
+.toggle-label {
+    font-size: 14px;
+    color: #8e8e93;
+}
+
+/* Action Buttons Active State */
+.action-buttons .btn.active {
+    background: #007aff;
+    color: #ffffff;
+}
+
+#scraping-results-container {
+    max-height: 500px;
+    overflow-y: auto;
 }
 
 /* Add this after the .interrupt-btn:hover rule */
@@ -889,14 +1146,23 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
+    max-height: 60vh; /* Keep this to limit the container height */
+    overflow-y: auto; /* Change from hidden to auto to enable scrolling */
 }
 
 .CodeMirror {
-    height: auto !important;
+    height: auto !important; /* Change from 100% to auto */
     flex: 1;
     font-family: 'Courier New', monospace;
     font-size: 14px;
     line-height: 1.5;
+    overflow: visible !important; /* Change from hidden to visible */
+}
+
+.CodeMirror-scroll {
+    overflow-y: auto !important; /* Change from scroll to auto */
+    overflow-x: auto !important;
+    max-height: none !important;
 }
 
 #config-editor {

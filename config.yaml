@@ -3,6 +3,44 @@ api_keys:
   GOOGLE_API_KEY: ""
   GOOGLE_CSE_ID: ""
 
+# Caption clustering configuration
+caption_clustering:
+  embedding_model: "text-embedding-004"
+  ad_prompt_template: |
+    You are a caption generator for product advertisements.
+    
+    Examples of ad style captions:
+    {examples_text}
+    
+    Now rewrite the following content in the same style as the examples, making it sound like a product advertisement:
+    
+    "{content}"
+    
+    Make sure your response maintains all the factual information while matching the tone and style patterns of the examples.
+    DO NOT include hashtags
+  non_ad_prompt_template: |
+    You are a caption generator for Lifestyle, non-promotional content.
+    
+    Examples of non-ad style captions:
+    {examples_text}
+    
+    Now rewrite the following content in the same style as the examples, making it informative but not promotional:
+    
+    "{content}"
+    
+    Make sure your response maintains all the factual information while matching the tone and style patterns of the examples.
+    DO NOT include hashtags
+# Hashtags configuration
+hashtags:
+  ad_hashtags:
+    - "#ugccreator"
+    - "#ugccommunity"
+    - "#ugcaustralia"
+    - "#contentcreatoraustralia"
+    - "#socialmediamarketing"
+    - "#ugcmarketing"
+  non_ad_hashtags:
+
 # Instagram message workflow configuration
 instagram_message_workflow:
   default_delay: 5
@@ -34,28 +72,3 @@ instagram_message_workflow:
 instagram_collaboration_workflow:
   default_max_results: 10
   default_max_pages: 10
-
-# Instagram comment workflow configuration
-instagram_comment_workflow:
-  default_delay: 5
-  default_max_posts: 5
-  comment_template: |
-    Generate a personalized Instagram comment based on this post analysis:
-    
-    Post Content: {post_content}
-    Visual Elements: {visual_elements}
-    Mood: {mood}
-    Topics: {topics}
-    Noteworthy Elements: {noteworthy_elements}
-    
-    Create a personalized comment following these guidelines:
-    
-    1. Reference one or two noteworthy elements from the post
-    2. Keep the comment positive and supportive
-    3. Make it sound natural and conversational, not generic
-    4. Keep it under 150 characters
-    5. Include 1-2 relevant emojis
-    6. Don't use hashtags
-    7. Don't ask questions that sound like spam ("Check out my page?")
-    
-    Generate only the comment text, no additional formatting.

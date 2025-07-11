@@ -5,8 +5,30 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command,interrupt
 import uuid
 import logging
+import asyncio
+import functools
 
 logger = logging.getLogger(__name__)
+
+def check_cancellation(func):
+    """Decorator to check for cancellation before async function execution
+    This function will only abort the workflow before the function starts
+    The decorated function must accept a 'stop_event' parameter.
+    """
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        # Extract stop_event from kwargs or get it from the first argument (self)
+        stop_event = kwargs.get('stop_event')
+        if stop_event is None and len(args) > 0 and hasattr(args[0], 'stop_event'):
+            stop_event = args[0].stop_event
+            
+        if stop_event and stop_event.is_set():
+            logger.info(f"Function {func.__name__} was cancelled after completion")
+            raise asyncio.CancelledError()
+        else:
+            return await func(*args, **kwargs)
+    
+    return wrapper
 
 class BaseWorkflowState(TypedDict):
     """Base state that all workflows should inherit from"""
@@ -164,8 +186,17 @@ class BaseWorkflow(ABC):
             interrupt_after=[]    # Can be overridden by subclasses
         )
     
-    async def run(self, user_input: str, thread_id: str = None) -> Dict[str, Any]:
-        """Run the workflow and return clean structured result"""
+    async def run(self, user_input: str, thread_id: str = None, stop_event: Optional[asyncio.Event] = None) -> Dict[str, Any]:
+        """Run the workflow and return clean structured result
+        
+        Args:
+            user_input: The input from the user
+            thread_id: Optional thread ID for the workflow
+            stop_event: Optional asyncio.Event that can be set to cancel the workflow
+        """
+        # Store stop_event as instance attribute so it can be accessed by workflow methods
+        self.stop_event = stop_event
+        
         # Initialize state with user input
         initial_state = {"user_input": user_input}
         
@@ -176,8 +207,26 @@ class BaseWorkflow(ABC):
         config = {"configurable": {"thread_id": thread_id}}
         
         try:
-            # Run the workflow
-            result = await self.app.ainvoke(initial_state, config=config)
+            
+            try:
+                # Run the workflow
+                result = await self.app.ainvoke(initial_state, config=config)
+            except asyncio.CancelledError:
+                # Handle cancellation during execution
+                logger.info(f"Workflow {thread_id} was cancelled during execution")
+                return {
+                    "status": "cancelled",
+                    "message": "Workflow cancelled during execution",
+                    "thread_id": thread_id
+                }
+            except Exception as e:
+                # Handle specific LangGraph exceptions if needed
+                logger.error(f"Error during workflow execution: {str(e)}")
+                return {
+                    "status": "error",
+                    "error_message": f"Workflow execution error: {str(e)}",
+                    "thread_id": thread_id
+                }
             
             # Check if workflow was interrupted
             if "__interrupt__" in result:
@@ -229,7 +278,15 @@ class BaseWorkflow(ABC):
                 "thread_id": thread_id
             }
     
-    async def resume(self, user_input: str, thread_id: str) -> Dict[str, Any]:
+    async def resume(self, user_input: str, thread_id: str, stop_event: Optional[asyncio.Event] = None) -> Dict[str, Any]:
+        """Resume a workflow with user input
+        
+        Args:
+            user_input: The input from the user
+            thread_id: Thread ID for the workflow
+            stop_event: Optional asyncio.Event that can be set to cancel the workflow
+        """
+        self.stop_event = stop_event
         # Handle special commands
         if user_input.lower() == "cancel":
             return {
@@ -238,15 +295,23 @@ class BaseWorkflow(ABC):
                 "thread_id": thread_id
             }
         
-        
         config = {"configurable": {"thread_id": thread_id}}
         
         try:
-            # Resume the workflow with user input using Command(resume=...)
-            result = await self.app.ainvoke(
-                Command(resume=user_input),
-                config=config
-            )
+            try:
+                # Resume the workflow with user input using Command(resume=...)
+                result = await self.app.ainvoke(
+                    Command(resume=user_input),
+                    config=config
+                )
+            except asyncio.CancelledError:
+                # Handle cancellation during execution
+                logger.info(f"Workflow {thread_id} was cancelled during execution")
+                return {
+                    "status": "cancelled",
+                    "message": "Workflow cancelled during execution",
+                    "thread_id": thread_id
+                }
             
             # Check if workflow was interrupted again
             if "__interrupt__" in result:
