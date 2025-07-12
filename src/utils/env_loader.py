@@ -1,7 +1,7 @@
 import os
-import yaml
 from dotenv import load_dotenv
 from .resource_path import get_resource_path
+from src.utils.config_loader import get_config
 
 def load_environment():
     """Load environment variables using a hybrid approach:
@@ -14,17 +14,14 @@ def load_environment():
     
     # First try to load from config.yaml
     try:
-        config_path = get_resource_path("config.yaml")
-        if os.path.exists(config_path):
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
+        config = get_config()
                 
-            # Check if API keys section exists in config
-            if config and 'api_keys' in config:
-                for key, value in config['api_keys'].items():
-                    if value and value.strip():  # Only set if value is not empty
-                        os.environ[key.upper()] = value
-                        env_vars_loaded = True
+        # Check if API keys section exists in config
+        if config and 'api_keys' in config:
+            for key, value in config['api_keys'].items():
+                if value and value.strip():  # Only set if value is not empty
+                    os.environ[key.upper()] = value
+                    env_vars_loaded = True
     except Exception as e:
         print(f"Warning: Error loading from config.yaml: {str(e)}")
     

@@ -3,68 +3,80 @@ import os
 import sys
 from pathlib import Path
 
-# Get the path to the Playwright browsers based on platform
-# This is where Playwright will install browsers by default
-if sys.platform == 'darwin':  # macOS
+# Limit to only Chromium browser (skip webkit/firefox)
+if sys.platform == 'darwin':
     home = os.path.expanduser("~")
     playwright_path = os.path.join(home, "Library", "Caches", "ms-playwright")
-else:  # Windows
+else:
     playwright_path = os.path.join(os.environ.get("LOCALAPPDATA", ""), "ms-playwright")
 
-# Create a list of browser binaries to include
+# ✅ Bundle only Chromium (reduce bulk)
 playwright_browsers = []
 if os.path.exists(playwright_path):
     for browser_type in os.listdir(playwright_path):
-        if browser_type.startswith("chromium"):
+        if browser_type.startswith("chromium"):  # ✅ only Chromium
             browser_dir = os.path.join(playwright_path, browser_type)
-            # Include the entire browser directory
             playwright_browsers.append(
-                (browser_dir, f'playwright/driver/package/.local-browsers/{browser_type}')
+                (browser_dir, f'_internal/playwright/driver/package/.local-browsers/{browser_type}')
             )
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=playwright_browsers,  # Include Playwright browser binaries
+    binaries=playwright_browsers,
     datas=[
-        ('gui', 'gui'),  # Include the GUI directory
-        ('src', 'src'),   # Include the src directory
-        ('config.yaml', '.'),  # Include the config file
-        # Removed .env file dependency
+        ('gui', 'gui'),
+        ('src', 'src'),
+        ('config.yaml', '.'),
+        ('data', 'data'),
     ],
-    hiddenimports=['playwright.sync_api', 'playwright.async_api'],  # Add Playwright to hidden imports
+    hiddenimports=[
+        'playwright.sync_api',
+        'playwright.async_api',
+        'playwright._impl._driver',  # ✅ ensure driver loads
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        # ❌ Remove large unused libraries
+        'tkinter',
+        'matplotlib',
+        'PyQt5',
+        'PyQt6',
+        'PySide2',
+        'PySide6',
+        'IPython',
+        'scipy',
+        'pydub',
+        'torch',
+        'tensorflow',
+        'sklearn',
+        'cv2',
+        'nltk',
+    ],
     noarchive=False,
-    optimize=0,
+    optimize=2,  # ✅ Optimize to level 2
 )
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
     [],
-    exclude_binaries=True,
     name='content-create-agent',
-    debug=True,  # Enable debug mode to get more information
+    debug=False,  # ✅ Turn off debug for smaller size
     bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    console=True,  # This is already set to True, which is good
+    strip=True,   # ✅ Strip debug symbols
+    upx=True,     # ✅ Compress with UPX (requires UPX installed)
+    console=True,  # Set to False if GUI-only
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-)
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='content-create-agent',
 )

@@ -13,53 +13,31 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # Import our resource path and environment loader utilities
 from src.utils.resource_path import get_resource_path, is_bundled
 
-# Function to install Playwright if missing
 def install_playwright_if_missing():
-    # When running as PyInstaller bundle, we need to set the browser path
-    # to be inside our application directory
+    """Set up Playwright Chromium browser path. No install in bundled mode."""
     if is_bundled():
-        # Get the base directory of the bundled app
-        base_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
-        playwright_dir = os.path.join(base_dir, "_internal", "playwright", "driver", "package", ".local-browsers")
-        
-        # Set environment variables to tell Playwright where to find/install browsers
-        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = playwright_dir
-        
-        # Check if Chromium is already installed in our bundle
-        if sys.platform == 'darwin':  # macOS
-            browser_path = Path(playwright_dir) / "chromium-1169" / "chrome-mac" / "Chromium.app" / "Contents" / "MacOS" / "Chromium"
-        else:  # Windows
-            browser_path = Path(playwright_dir) / "chromium-1169" / "chrome-win" / "chrome.exe"
-            
-        if browser_path.exists():
-            print(f"Playwright browser already installed at {browser_path}")
-            return
-    else:
-        # For development environment, use default location based on platform
-        if sys.platform == 'darwin':  # macOS
-            home = os.path.expanduser("~")
-            browser_path = Path(home) / "Library" / "Caches" / "ms-playwright" / "chromium-1169" / "chrome-mac" / "Chromium.app" / "Contents" / "MacOS" / "Chromium"
-        else:  # Windows
-            browser_path = Path(os.environ.get("LOCALAPPDATA", "")) / "ms-playwright" / "chromium-1169" / "chrome-win" / "chrome.exe"
-            
-        if browser_path.exists():
-            print("Playwright browser already installed.")
-            return
-    
-    print("Installing Playwright Chromium...")
-    try:
-        # Install only Chromium to save space
-        subprocess.run(
-            [sys.executable, "-m", "playwright", "install", "chromium"],
-            check=True
-        )
-        print("Playwright installed successfully.")
-    except subprocess.CalledProcessError as e:
-        print(f"Failed to install Playwright: {e}")
-        sys.exit(1)
+        # Onefile .exe extraction directory (e.g., _MEIPASS)
+        browser_dir = get_resource_path("_internal/playwright/driver/package/.local-browsers")
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = browser_dir
+        print(f"Bundled mode: PLAYWRIGHT_BROWSERS_PATH set to {browser_dir}")
+        return  # ✅ Skip any install or browser_path check
 
-# Install Playwright if needed
-install_playwright_if_missing()
+    # Dev mode — check if Playwright is already installed
+    if sys.platform == 'darwin':
+        home = os.path.expanduser("~")
+        browser_path = Path(home) / "Library/Caches/ms-playwright/chromium-1169/chrome-mac/Chromium.app/Contents/MacOS/Chromium"
+    else:
+        browser_path = Path(os.environ.get("LOCALAPPDATA", "")) / "ms-playwright/chromium-1169/chrome-win/chrome.exe"
+
+    if browser_path.exists():
+        print(f"Playwright browser already installed at {browser_path}")
+        return
+
+    # Dev only: install if missing
+    print("Installing Playwright Chromium...")
+    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+    print("Playwright installed successfully.")
+
 
 # Simple HTTP server for serving the GUI files
 class GUIServer(SimpleHTTPRequestHandler):
@@ -73,36 +51,37 @@ def start_gui_server():
     print(f"GUI server started at http://localhost:8080")
     httpd.serve_forever()
 
-# Import the leads server module - moved after GUI server starts
-from src.leads.leads_server import main as start_leads_server
-
-# Load environment variables - moved after GUI server starts
+# Import server modules
+from src.leads.server import main as start_leads_server
+from src.scraping.server import main as start_scraping_server
+from src.captions.server import main as start_captions_server
 from src.utils.env_loader import load_environment
 
-# Main function to start both servers
 def main():
     # Start the GUI server first
     gui_thread = threading.Thread(target=start_gui_server)
     gui_thread.daemon = True
     gui_thread.start()
-    
-    # Wait a moment for GUI server to start
-    time.sleep(1)
-    
-    # Open the browser
+
+    time.sleep(1)  # Wait for GUI to start
     webbrowser.open('http://localhost:8080')
-    
-    # Now load environment variables
+
     env_loaded = load_environment()
     if not env_loaded:
         print("Warning: Some environment variables are missing. Please configure them through the GUI.")
-    
-    # Start the leads server in a separate thread
+
     leads_thread = threading.Thread(target=start_leads_server)
     leads_thread.daemon = True
     leads_thread.start()
-    
-    # Keep the main thread alive
+
+    scraping_thread = threading.Thread(target=start_scraping_server)
+    scraping_thread.daemon = True
+    scraping_thread.start()
+
+    captions_thread = threading.Thread(target=start_captions_server)
+    captions_thread.daemon = True
+    captions_thread.start()
+
     try:
         while True:
             time.sleep(1)
@@ -111,4 +90,5 @@ def main():
         sys.exit(0)
 
 if __name__ == "__main__":
+    install_playwright_if_missing()
     main()

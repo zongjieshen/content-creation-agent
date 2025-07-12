@@ -39,15 +39,27 @@
 
         <div class="main-container">
             <!-- Sidebar -->
+            <!-- Add this right after the opening <aside class="sidebar"> tag -->
             <aside class="sidebar">
+                <div class="sidebar-toggle" id="sidebar-toggle">
+                    <i class="fas fa-chevron-left" id="toggle-icon"></i>
+                </div>
                 <nav class="nav-menu">
                     <div class="nav-item active" data-tab="search">
                         <i class="fas fa-search"></i>
                         <span>Search</span>
                     </div>
+                    <div class="nav-item" data-tab="scraping">
+                        <i class="fas fa-spider"></i>
+                        <span>Scraping</span>
+                    </div>
                     <div class="nav-item" data-tab="message">
                         <i class="fas fa-comments"></i>
                         <span>Message</span>
+                    </div>
+                    <div class="nav-item" data-tab="video">
+                        <i class="fas fa-video"></i>
+                        <span>Video Analysis</span>
                     </div>
                 </nav>
             </aside>
@@ -112,6 +124,78 @@
                     </div>
                 </div>
 
+                <!-- Scraping Tab -->
+                <div id="scraping-tab" class="tab-content">
+                    <div class="tab-header">
+                        <h2><i class="fas fa-spider"></i> Instagram Scraping</h2>
+                        <p>Scrape Instagram profiles for content analysis</p>
+                    </div>
+                    
+                    <div class="search-form-container">
+                        <form id="scraping-form" class="search-form">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="usernames">Usernames</label>
+                                    <input type="text" id="usernames" name="usernames" placeholder="e.g., username1, username2, username3" required>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="max_posts">Max Posts Per User</label>
+                                    <input type="number" id="max_posts" name="max_posts" value="50" min="1" max="500">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="force_reset">Force Rebuild</label>
+                                    <div class="toggle-switch-container">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="force_reset" name="force_reset">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                        <span class="toggle-label">Off</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary" id="scraping-btn">
+                                <i class="fas fa-spider"></i>
+                                Start Scraping
+                            </button>
+                        </form>
+                    </div>
+                    
+                    <div class="scraping-actions-container">
+                        <div class="action-buttons">
+                            <button id="load-scraped-users" class="btn btn-secondary">
+                                <i class="fas fa-users"></i>
+                                Load Scraped Users
+                            </button>
+                            <button id="load-brands" class="btn btn-secondary">
+                                <i class="fas fa-tags"></i>
+                                Load Brands from Ads
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="scraping-results" class="results-container" style="display: none;">
+                        <div class="results-header">
+                            <h3>Scraping Results</h3>
+                            <div class="results-actions">
+                                <button id="download-scraping-csv" class="btn btn-secondary">
+                                    <i class="fas fa-download"></i>
+                                    Download CSV
+                                </button>
+                                <button id="use-brands-for-messaging" class="btn btn-primary">
+                                    <i class="fas fa-arrow-right"></i>
+                                    Use for Messaging
+                                </button>
+                            </div>
+                        </div>
+                        <div id="scraping-results-container">
+                            <!-- Results table will be inserted here -->
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Message Tab -->
                 <div id="message-tab" class="tab-content">
                     <div class="tab-header">
@@ -152,6 +236,64 @@
                                     <button id="send-btn" class="btn btn-primary" disabled>
                                         <i class="fas fa-paper-plane"></i>
                                     </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="video-tab" class="tab-content">
+                    <div class="tab-header">
+                        <h2><i class="fas fa-video"></i> Video Analysis</h2>
+                        <p>Generating Captions using Gemini AI</p>
+                    </div>
+                    
+                    <div class="video-analysis-container">
+                        <div class="video-upload-section">
+                            <div class="upload-area" id="video-upload-area">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                                <p>Upload a video file for analysis</p>
+                                <input type="file" id="video-file" accept=".mp4,.mov,.avi,.mkv,.webm" style="display: none;">
+                                <button type="button" class="btn btn-secondary" id="video-upload-btn">
+                                    <i class="fas fa-upload"></i>
+                                    Choose Video
+                                </button>
+                            </div>
+                            <div id="video-status" class="video-status">No file selected</div>
+                        </div>
+                        
+                        <div class="analysis-options">
+                            <div class="form-group">
+                                <label>Target Style</label>
+                                <div class="toggle-switch-container">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="target_label" name="target_label">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <span class="toggle-label">Ad</span>
+                                </div>
+                            </div>
+                            
+                            <button type="button" class="btn btn-primary" id="generate-captions-btn" disabled>
+                                <i class="fas fa-play"></i>
+                                Analyze Video
+                            </button>
+                        </div>
+                        
+                        <div id="analysis-results" class="results-container" style="display: none;">
+                            <div class="results-header">
+                                <h3>Captions</h3>
+                                <div class="results-actions">
+                                    <button id="copy-results-btn" class="btn btn-secondary">
+                                        <i class="fas fa-copy"></i>
+                                        Copy All
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="analysis-results-grid">
+                                <div class="result-box full-width">
+                                    <h4>Caption Content</h4>
+                                    <div id="analysis-content" class="result-content"></div>
                                 </div>
                             </div>
                         </div>
@@ -216,6 +358,13 @@
             </div>
         </div>
     </div>
-    <script src="app.js"></script>
+    
+    <!-- Split JavaScript Files -->
+    <script src="js/core.js"></script>
+    <script src="js/search.js"></script>
+    <script src="js/scraping.js"></script>
+    <script src="js/messaging.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/video_analysis.js"></script>
 </body>
 </html>

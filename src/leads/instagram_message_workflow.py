@@ -1,20 +1,21 @@
 from typing import TypedDict, Optional, Dict, Any, List, Callable
 import csv
+import shutil
 import asyncio
 import logging
 import os
 import re
-# Around line 7, update the imports:
+import winreg
 from pathlib import Path
-# Remove this line since we're using load_environment instead
-# from dotenv import load_dotenv
-from src.utils.resource_path import get_resource_path
 from src.utils.env_loader import load_environment
+from datetime import datetime
+from src.utils.db_client import get_db_context
+from src.utils.config_loader import get_config
 
 # Use only load_environment()
 load_environment()
 from playwright.async_api import async_playwright
-from src.base_workflow import BaseWorkflow, BaseWorkflowState, InterruptConfig
+from src.base_workflow import BaseWorkflow, BaseWorkflowState, InterruptConfig, check_cancellation
 from langgraph.graph import END
 import hashlib
 import yaml
@@ -28,9 +29,6 @@ from src.leads.instagram_automator_helpers import (
     generate_personalized_message
 )
 
-# Load environment variables from .env file
-# Remove this duplicate load_dotenv() call
-# load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -90,9 +88,34 @@ class InstagramMessageAutomator:
         
         # Use a persistent context to maintain cookies and session data
         user_data_dir = Path.home() / ".playwright-instagram-data"
+
+        def find_chrome_path():
+                # Try environment PATH
+                chrome = shutil.which("chrome") or shutil.which("chrome.exe")
+                if chrome:
+                    return chrome
+
+                # Try common install locations on Windows
+                candidates = [
+                    Path("C:/Program Files/Google/Chrome/Application/chrome.exe"),
+                    Path("C:/Program Files (x86)/Google/Chrome/Application/chrome.exe")
+                ]
+                for path in candidates:
+                    if path.exists():
+                        return str(path)
+
+                return None
+
+        chrome_exe = find_chrome_path()
+        if not chrome_exe:
+            raise RuntimeError("System Chrome not found on this machine.")
+        
+        print(f"✅ Using system Chrome at: {chrome_exe}")
+
         self.browser = await self.playwright.chromium.launch_persistent_context(
             user_data_dir=str(user_data_dir),
             headless=self.headless,
+            channel="chrome",  # Use installed Chrome browser instead of Chromium
             args=[
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -105,14 +128,15 @@ class InstagramMessageAutomator:
                 '--hide-scrollbars',
                 '--mute-audio'
             ],
-            viewport={'width': 1280, 'height': 1400},
+            viewport={'width': 600, 'height': 900},
             user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
             locale='en-US',
             timezone_id='America/New_York',
             color_scheme='light',
-            device_scale_factor=1.0,
+            device_scale_factor=0.3,
             is_mobile=False
         )
+        logging.info("Using installed Chrome browser with channel parameter")
         
         self.page = await self.browser.new_page()
         
@@ -178,6 +202,13 @@ class InstagramMessageAutomator:
     async def analyze_profile(self, profile_url, state):
         """Analyze an Instagram profile and determine if it's suitable for messaging."""
         try:
+            # Check if this profile has been messaged before
+            already_messaged = await check_if_profile_messaged(profile_url)
+            if already_messaged:
+                self.logger.info(f"Skipping {profile_url} as it has been messaged before")
+                state["current_profile_url"] = None
+                return False, state
+                
             # Navigate to the profile
             await self.page.goto(profile_url)
             await add_random_delays(1, 3, self.logger)
@@ -331,7 +362,14 @@ class InstagramMessageAutomator:
         try:
             # Send the message programmatically after confirmation
             await self.page.keyboard.press('Enter')
-            self.logger.info(f"Message sent after confirmation: '{state.get('message_text')}'")            
+            self.logger.info(f"Message sent after confirmation: '{state.get('message_text')}'")
+            
+            # Record the sent message in the database
+            profile_url = state.get("current_profile_url")
+            message_text = state.get("message_text")
+            if profile_url and message_text:
+                await record_sent_message(profile_url, message_text)
+                
             # Add a delay after sending
             await add_random_delays(1.0, 3.0, self.logger)            
             await add_delay(2, self.logger)  # Final delay before going back
@@ -573,11 +611,8 @@ class InstagramMessageWorkflow(BaseWorkflow):
             csv_path = None
             state["error_message"] = "No uploaded CSV file found. Please upload a CSV file with Instagram profiles."
         
-        # Load configuration from config.yaml file
         try:
-            config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config.yaml")
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
+            config = get_config()
                 
             # Get default values from config
             instagram_config = config.get('instagram_message_workflow', {})
@@ -801,6 +836,7 @@ class InstagramMessageWorkflow(BaseWorkflow):
         else:  # "skip" or any other value
             return "skip_profile"
     
+
     async def prepare_message(self, state: InstagramMessageState):
         """Prepare and type the message into Instagram DM."""
         state = self.update_step(state, "message_preparation")
@@ -814,12 +850,13 @@ class InstagramMessageWorkflow(BaseWorkflow):
         
         return state
     
+    @check_cancellation
     async def send_message(self, state: InstagramMessageState):
         """Send the message after confirmation"""
         state = self.update_step(state, "message_sending")
         
         try:
-            # Send the message
+            # Send the mess
             success = await self.automator.send_message(state)
             
             if success:
@@ -864,6 +901,82 @@ class InstagramMessageWorkflow(BaseWorkflow):
         
         state["workflow_status"] = "completed"
         return state
+
+
+# helper function
+async def check_if_profile_messaged(profile_url):
+    """Check if a profile has already been messaged"""
+    try:
+        with get_db_context() as (conn, cursor):
+            # Extract username from profile URL
+            username = profile_url.split('/')[-2] if profile_url.endswith('/') else profile_url.split('/')[-1]
+            
+            # Check by both profile URL and username for robustness
+            cursor.execute(
+                "SELECT * FROM sent_messages WHERE profile_url = ? OR username = ?", 
+                (profile_url, username)
+            )
+            result = cursor.fetchone()
+            
+            if result:
+                return True
+            return False
+    except Exception as e:
+        return False
+
+async def record_sent_message(profile_url, message_text, success=True):
+    """Record a sent message in the database"""
+    try:
+        # Extract username from profile URL
+        username = profile_url.split('/')[-2] if profile_url.endswith('/') else profile_url.split('/')[-1]
+        
+        with get_db_context() as (conn, cursor):
+            cursor.execute(
+                "INSERT OR REPLACE INTO sent_messages (profile_url, username, message_text, sent_date, success) VALUES (?, ?, ?, ?, ?)",
+                (profile_url, username, message_text, datetime.now().isoformat(), 1 if success else 0)
+            )
+            return True
+    except Exception as e:
+        return False
+
+async def get_chrome_executable_path():
+    """Detect the installed Chrome browser path on Windows."""
+    chrome_path = None
+    
+    # Method 1: Check registry for Chrome installation path
+    try:
+        # Try the App Paths registry key first
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                           r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe") as key:
+            chrome_path = winreg.QueryValue(key, None)
+            if os.path.exists(chrome_path):
+                return chrome_path
+    except WindowsError:
+        pass
+    
+    # Method 2: Check ChromeHTML registry key
+    try:
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"ChromeHTML\shell\open\command") as key:
+            command = winreg.QueryValueEx(key, "")[0]
+            match = re.search('"(.*?)"', command)
+            if match and os.path.exists(match.group(1)):
+                return match.group(1)
+    except WindowsError:
+        pass
+    
+    # Method 3: Check common installation paths
+    common_paths = [
+        os.path.join(os.environ.get('PROGRAMFILES', 'C:\\Program Files'), 'Google\\Chrome\\Application\\chrome.exe'),
+        os.path.join(os.environ.get('PROGRAMFILES(X86)', 'C:\\Program Files (x86)'), 'Google\\Chrome\\Application\\chrome.exe'),
+        os.path.expanduser('~\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe')
+    ]
+    
+    for path in common_paths:
+        if os.path.exists(path):
+            return path
+    
+    # If Chrome is not found, return None
+    return None
 
 async def main():
     # Path to the CSV file

@@ -15,6 +15,8 @@ from typing import List, Optional
 from src.utils.env_loader import load_environment
 # Update this import
 from src.utils.gemini_client import get_client
+from src.utils.config_loader import get_config
+
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -385,17 +387,8 @@ async def generate_personalized_message(analysis_result, logger=None):
     # Get data from the InstagramProfileAnalysis model
     account_niche = analysis_result["account_niche"]
     noteworthy_elements = analysis_result["noteworthy_elements"]
-    
-    # Around line 380, replace the config loading code with:
-    
-    from src.utils.resource_path import get_resource_path
-    
-    # Load the message template from config.yaml
-    import yaml
-    
-    config_path = get_resource_path('config.yaml')
-    with open(config_path, 'r') as file:
-        config = yaml.safe_load(file)
+        
+    config = get_config()
     
     # Get the custom template or use the default if not found
     message_template = config.get('instagram_message_workflow', {}).get('message_template', None)

@@ -19,12 +19,14 @@ import uvicorn
 import bleach
 
 # Import workflow classes
-from src.leads.instagram_collaboration_workflow import InstagramCollaborationWorkflow
-from src.leads.instagram_message_workflow import InstagramMessageWorkflow
-from src.video_analysis_workflow import VideoAnalysisWorkflow
-from src.base_workflow import BaseWorkflow
+from .instagram_collaboration_workflow import InstagramCollaborationWorkflow
+from .instagram_message_workflow import InstagramMessageWorkflow
+from ..base_workflow import BaseWorkflow
 
-active_workflows = {}
+# With these lines
+# Global stop events for different workflow types
+messaging_stop_event = None
+collaboration_stop_event = None
 # Set up logging
 logging.basicConfig(level=os.environ.get('LOGLEVEL', 'INFO').upper())
 logger = logging.getLogger(__name__)
@@ -179,7 +181,6 @@ async def startup_event():
         # Initialize workflow instances
         app.collaboration_workflow = InstagramCollaborationWorkflow()
         app.messaging_workflow = InstagramMessageWorkflow()
-        app.video_analysis_workflow = VideoAnalysisWorkflow()
         
         logger.info("Leads server initialization completed successfully")
         
@@ -231,22 +232,19 @@ async def generate_workflow_response(
     """Generate response for leads workflows with LangGraph interrupt/resume support"""
     
     logger.info(f"Input at /generate endpoint: {prompt.dict()}")
-    
+    global messaging_stop_event, collaboration_stop_event
     # Select workflow based on type
     if prompt.workflow_type == "collaboration":
         workflow = app.collaboration_workflow
+        collaboration_stop_event = asyncio.Event()
+        stop_event = collaboration_stop_event
     elif prompt.workflow_type == "messaging":
         workflow = app.messaging_workflow
-    elif prompt.workflow_type == "video_analysis":
-        workflow = app.video_analysis_workflow
+        messaging_stop_event = asyncio.Event()
+        stop_event = messaging_stop_event
     else:
         raise HTTPException(status_code=400, detail="Invalid workflow type")
     
-    stop_event = asyncio.Event()
-    active_workflows[prompt.session_id] = stop_event
-
-    # Register the stop event with the workflow
-    #workflow.register_stop_event(prompt.session_id, stop_event)
     
     try:
         user_query_timestamp = time.time()
@@ -304,50 +302,43 @@ async def generate_workflow_response(
             }
         }
         
-        try:
-            # Check for existing workflow state (interrupt/resume support)
-            if hasattr(workflow, 'app') and workflow.app:
-                try:
-                    # Check for interrupt state
-                    snapshot = await workflow.app.aget_state(config)
-                    
-                    if snapshot.next:  # Workflow is interrupted
-                        logger.info(f"Resuming interrupted workflow for session {prompt.session_id}")
-                        
-                        # Resume workflow with user input
-                        result = await workflow.resume(last_user_message, prompt.session_id)
-                    else:
-                        # Start new workflow
-                        logger.info(f"Starting new {prompt.workflow_type} workflow for session {prompt.session_id}")
-                        result = await workflow.run(last_user_message, prompt.session_id)
-                    
-                    # Check if workflow was aborted
-                    if stop_event.is_set():
-                        result = {
-                            "status": "cancelled",
-                            "message": "Workflow was cancelled by user",
-                            "thread_id": prompt.session_id
-                        }
+
+        # Check for existing workflow state (interrupt/resume support)
+        if hasattr(workflow, 'app') and workflow.app:
+            try:
+                # Check for interrupt state
+                snapshot = await workflow.app.aget_state(config)
                 
-                except Exception as workflow_error:
-                    logger.error(f"Workflow execution error: {str(workflow_error)}")
-                    result = {
-                        "workflow_status": "error",
-                        "error_message": str(workflow_error)
-                    }
-            else:
-                # Fallback for workflows without LangGraph app
-                logger.warning(f"Workflow {prompt.workflow_type} does not have LangGraph app, using basic execution")
-                result = {"workflow_status": "completed", "message": "Workflow executed successfully"}
+                if snapshot.next:  # Workflow is interrupted
+                    logger.info(f"Resuming interrupted workflow for session {prompt.session_id}")
+                    
+                    # Resume workflow with user input
+                    task = asyncio.create_task(
+                        workflow.resume(last_user_message, prompt.session_id, stop_event)
+                    )
+                    result = await task
+                else:
+                    # Start new workflow
+                    logger.info(f"Starting new {prompt.workflow_type} workflow for session {prompt.session_id}")
+                    # Use asyncio.create_task to run the workflow
+                    task = asyncio.create_task(
+                        workflow.run(last_user_message, prompt.session_id, stop_event)
+                    )
+                    result = await task
             
-            workflow_status = result.get("status")
-            
-            # Rest of the function remains the same...
-        finally:
-            # Clean up the stop event
-            if prompt.session_id in active_workflows:
-                del active_workflows[prompt.session_id]
+            except Exception as workflow_error:
+                logger.error(f"Workflow execution error: {str(workflow_error)}")
+                result = {
+                    "workflow_status": "error",
+                    "error_message": str(workflow_error)
+                }
+        else:
+            # Fallback for workflows without LangGraph app
+            logger.warning(f"Workflow {prompt.workflow_type} does not have LangGraph app, using basic execution")
+            result = {"workflow_status": "completed", "message": "Workflow executed successfully"}
         
+        workflow_status = result.get("status")
+            
         # Create response object with the complete result data
         leads_response = LeadsResponse(
             id=resp_id,
@@ -394,8 +385,6 @@ async def generate_workflow_response(
             elif "automation_result" in result:
                 automation_result = result["automation_result"]
                 resp_str = automation_result.get("message", "Messaging automation completed successfully.")
-            elif "summary_report" in result:
-                resp_str = f"Video analysis completed. {result.get('summary_report')[:500]}..."
             else:
                 resp_str = "Workflow completed successfully."
             
@@ -453,11 +442,6 @@ async def list_workflows():
                 "type": "messaging",
                 "name": "Instagram Messaging Automation",
                 "description": "Automate messaging to Instagram profiles"
-            },
-            {
-                "type": "video_analysis",
-                "name": "TikTok Video Analysis",
-                "description": "Analyze TikTok videos for a given keyword or hashtag"
             }
         ]
     }
@@ -545,6 +529,8 @@ class CancelOperationRequest(BaseModel):
 @app.post("/cancel_operation", tags=["Leads Workflows"])
 async def cancel_operation(request: CancelOperationRequest):
     """Cancel an ongoing operation for a session"""
+    global messaging_stop_event, collaboration_stop_event
+    
     if not app.session_manager.is_session(request.session_id):
         raise HTTPException(status_code=404, detail="Session not found")
     
@@ -554,30 +540,17 @@ async def cancel_operation(request: CancelOperationRequest):
         {"cancelled_operation": request.operation_type, "cancelled_at": time.time()}
     )
     
-    # Set the stop event to abort the workflow
-    if request.session_id in active_workflows:
-        active_workflows[request.session_id].set()
-        logger.info(f"Workflow abort signal sent for session {request.session_id}")
-        
-        # Close Playwright resources if this is a messaging workflow
-        if request.operation_type == "messaging" and hasattr(app, "messaging_workflow"):
-            try:
-                # Get the workflow instance
-                workflow = app.messaging_workflow
-                
-                # Check if the workflow has an active automation with Playwright resources
-                if hasattr(workflow, "automator") and workflow.automator:
-                    logger.info(f"Closing Playwright resources for session {request.session_id}")
-                    # Call the finalize_automation method to close resources
-                    await workflow.automator.finalize_automation()
-                    logger.info(f"Playwright resources closed for session {request.session_id}")
-            except Exception as e:
-                logger.error(f"Error closing Playwright resources: {str(e)}")
+    # Set the appropriate stop event based on operation type
+    if request.operation_type == "message" and messaging_stop_event is not None:
+        messaging_stop_event.set()
+        logger.info(f"Messaging workflow abort signal sent for session {request.session_id}")
+        return {"message": f"Operation {request.operation_type} cancelled for session {request.session_id}"}
+    elif request.operation_type == "collaboration" and collaboration_stop_event is not None:
+        collaboration_stop_event.set()
+        logger.info(f"Collaboration workflow abort signal sent for session {request.session_id}")
+        return {"message": f"Operation {request.operation_type} cancelled for session {request.session_id}"}
     else:
-        logger.warning(f"No active workflow found for session {request.session_id}")
-    
-    # Return success response
-    return {"message": f"Operation {request.operation_type} cancelled for session {request.session_id}"}
+        raise HTTPException(status_code=404, detail=f"No active {request.operation_type} operation found")
 
 @app.post("/save_csv", tags=["Leads Workflows"], response_model=FileUploadResponse)
 async def save_csv(request: Request):
@@ -621,31 +594,6 @@ async def save_csv(request: Request):
         logger.error(f"Error saving CSV file: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error saving file: {str(e)}")
 
-class CancelOperationRequest(BaseModel):
-    session_id: str = Field(..., description="Session ID for the operation to cancel")
-    operation_type: str = Field(..., description="Type of operation to cancel: 'search', 'message', etc.")
-
-@app.post("/cancel_operation", tags=["Leads Workflows"])
-async def cancel_operation(request: CancelOperationRequest):
-    """Cancel an ongoing operation for a session"""
-    if not app.session_manager.is_session(request.session_id):
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    # Update session info to indicate cancellation
-    app.session_manager.update_session_info(
-        request.session_id, 
-        {"cancelled_operation": request.operation_type, "cancelled_at": time.time()}
-    )
-    
-    # Set the stop event to abort the workflow
-    if request.session_id in active_workflows:
-        active_workflows[request.session_id].set()
-        logger.info(f"Workflow abort signal sent for session {request.session_id}")
-    else:
-        logger.warning(f"No active workflow found for session {request.session_id}")
-    
-    # Return success response
-    return {"message": f"Operation {request.operation_type} cancelled for session {request.session_id}"}
 
 
 # Add these Pydantic models with the other models
@@ -668,8 +616,8 @@ async def get_config():
         # Get the path to the config file
         config_path = get_resource_path("config.yaml")
         
-        # Read the config file
-        with open(config_path, "r") as f:
+        # Read the config file with UTF-8 encoding explicitly specified
+        with open(config_path, "r", encoding="utf-8") as f:
             config_content = f.read()
         
         return ConfigResponse(config_content=config_content)
@@ -692,12 +640,16 @@ async def save_config(request: SaveConfigRequest):
         
         # Create a backup of the current config
         backup_path = f"{config_path}.bak"
-        with open(config_path, "r") as src, open(backup_path, "w") as dst:
+        with open(config_path, "r", encoding="utf-8") as src, open(backup_path, "w", encoding="utf-8") as dst:
             dst.write(src.read())
         
         # Write the updated config
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             f.write(request.config_content)
+        
+        # Clear the config cache
+        from src.utils.config_loader import get_config
+        get_config.cache_clear()
             
         initialize_client()
         
@@ -728,7 +680,7 @@ def main():
     
     # Run the server
     uvicorn.run(
-        "src.leads.leads_server:app",  # Use the full module path
+        "src.leads.server:app",  # Use the full module path
         host=host,
         port=port,
         reload=False,
