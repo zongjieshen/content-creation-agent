@@ -1,8 +1,11 @@
 from typing import TypedDict, Optional, Dict, Any, List, Callable
 import csv
+import shutil
 import asyncio
 import logging
 import os
+import re
+import winreg
 from pathlib import Path
 from src.utils.env_loader import load_environment
 from datetime import datetime
@@ -85,9 +88,34 @@ class InstagramMessageAutomator:
         
         # Use a persistent context to maintain cookies and session data
         user_data_dir = Path.home() / ".playwright-instagram-data"
+
+        def find_chrome_path():
+                # Try environment PATH
+                chrome = shutil.which("chrome") or shutil.which("chrome.exe")
+                if chrome:
+                    return chrome
+
+                # Try common install locations on Windows
+                candidates = [
+                    Path("C:/Program Files/Google/Chrome/Application/chrome.exe"),
+                    Path("C:/Program Files (x86)/Google/Chrome/Application/chrome.exe")
+                ]
+                for path in candidates:
+                    if path.exists():
+                        return str(path)
+
+                return None
+
+        chrome_exe = find_chrome_path()
+        if not chrome_exe:
+            raise RuntimeError("System Chrome not found on this machine.")
+        
+        print(f"✅ Using system Chrome at: {chrome_exe}")
+
         self.browser = await self.playwright.chromium.launch_persistent_context(
             user_data_dir=str(user_data_dir),
             headless=self.headless,
+            channel="chrome",  # Use installed Chrome browser instead of Chromium
             args=[
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -108,6 +136,7 @@ class InstagramMessageAutomator:
             device_scale_factor=0.3,
             is_mobile=False
         )
+        logging.info("Using installed Chrome browser with channel parameter")
         
         self.page = await self.browser.new_page()
         
@@ -909,6 +938,45 @@ async def record_sent_message(profile_url, message_text, success=True):
             return True
     except Exception as e:
         return False
+
+async def get_chrome_executable_path():
+    """Detect the installed Chrome browser path on Windows."""
+    chrome_path = None
+    
+    # Method 1: Check registry for Chrome installation path
+    try:
+        # Try the App Paths registry key first
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                           r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe") as key:
+            chrome_path = winreg.QueryValue(key, None)
+            if os.path.exists(chrome_path):
+                return chrome_path
+    except WindowsError:
+        pass
+    
+    # Method 2: Check ChromeHTML registry key
+    try:
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"ChromeHTML\shell\open\command") as key:
+            command = winreg.QueryValueEx(key, "")[0]
+            match = re.search('"(.*?)"', command)
+            if match and os.path.exists(match.group(1)):
+                return match.group(1)
+    except WindowsError:
+        pass
+    
+    # Method 3: Check common installation paths
+    common_paths = [
+        os.path.join(os.environ.get('PROGRAMFILES', 'C:\\Program Files'), 'Google\\Chrome\\Application\\chrome.exe'),
+        os.path.join(os.environ.get('PROGRAMFILES(X86)', 'C:\\Program Files (x86)'), 'Google\\Chrome\\Application\\chrome.exe'),
+        os.path.expanduser('~\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe')
+    ]
+    
+    for path in common_paths:
+        if os.path.exists(path):
+            return path
+    
+    # If Chrome is not found, return None
+    return None
 
 async def main():
     # Path to the CSV file
