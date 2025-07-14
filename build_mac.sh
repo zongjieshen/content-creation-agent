@@ -31,12 +31,14 @@ cp -r "dist_mac/content-create-agent" dist_mac/dmg/
 # Create the DMG file
 create-dmg \
   --volname "Content Creation Agent" \
+  --volicon "content-creation-agent.icns" \
   --window-pos 200 120 \
   --window-size 600 400 \
   --icon-size 100 \
   --icon "content-create-agent" 200 190 \
   --hide-extension "content-create-agent" \
   --app-drop-link 400 190 \
+  --background "background.png" \
   "dist_mac/content-creation-agent.dmg" \
   "dist_mac/dmg/"
 

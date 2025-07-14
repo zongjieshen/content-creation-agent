@@ -140,17 +140,17 @@ exe = EXE(
     a.datas,
     [],
     name='content-create-agent',
-    debug=False,  # ✅ Turn off debug for smaller size
+    debug=False,  
     bootloader_ignore_signals=False,
-    strip=True,   # ✅ Strip debug symbols
-    upx=False,     # ✅ Compress with UPX (requires UPX installed)
-    upx_exclude=[],  # ✅ Exclude problematic files from UPX compression
-    runtime_tmpdir=None,  # ✅ Use memory instead of disk for temporary files
+    strip=True,   
+    upx=False,     
+    upx_exclude=[], 
+    runtime_tmpdir=None,  
     console=True,  # Set to False if GUI-only
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # Add an icon file path here if you have one
+    icon='content-creation-agent.icns',  # Add your icon file path here
 )
