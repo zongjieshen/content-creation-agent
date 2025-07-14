@@ -1,3 +1,3 @@
-cd C:\Users\sheny\Documents\GitHub\content-creation-agent\dist\content-create-agent
+cd C:\Users\\Zongjie\Documents\GitHub\content-creation-agent\dist
 content-create-agent.exe
 pause

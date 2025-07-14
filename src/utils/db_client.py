@@ -2,7 +2,7 @@ import logging
 import sqlite3
 import threading
 from pathlib import Path
-from .resource_path import get_resource_path
+from .resource_path import get_resource_path, get_app_data_dir, is_bundled
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -22,7 +22,13 @@ def get_db_path():
     """
     global db_path
     if db_path is None:
-        data_dir = Path(get_resource_path('data'))
+        # Use app data directory for persistent storage when running as executable
+        if is_bundled():
+            data_dir = Path(get_app_data_dir())
+        else:
+            # In development mode, use the project's data directory
+            data_dir = Path(get_resource_path('data'))
+            
         data_dir.mkdir(parents=True, exist_ok=True)
         db_path = data_dir / "creation_agent.db"
     return db_path

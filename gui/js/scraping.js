@@ -356,7 +356,8 @@ function displayBrands(brands) {
             
             const cells = [
                 brand.profile_url || '',
-                brand.username || ''
+                brand.username || '',
+                brand.mention_count || '0'
             ];
             
             cells.forEach((cellData, index) => {
