@@ -53,6 +53,7 @@ a = Analysis(
         # Data processing and storage
         'numpy',
         'faiss',
+        'faiss.swigfaiss',
         
         # Security and sanitization
         'bleach',
