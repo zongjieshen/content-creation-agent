@@ -25,7 +25,7 @@ CACHE_DIR.mkdir(exist_ok=True)
 # Import helper functions
 from src.leads.instagram_automator_helpers import (
     add_random_delays, add_delay, simulate_human_mouse_movement,
-    detect_message_button, type_humanlike, analyze_instagram_screenshot,
+     type_humanlike, analyze_instagram_screenshot,
     generate_personalized_message
 )
 
@@ -185,20 +185,6 @@ class InstagramMessageAutomator:
             self.logger.error(f"Failed to load profiles from CSV: {str(e)}")
             return False
             
-    async def find_message_button_visual(self):
-        # Capture screenshot of the current page
-        screenshot_path = "temp_screenshot.png"
-        await self.page.screenshot(path=screenshot_path)
-        
-        # Process the screenshot to find the message button
-        message_button_coords = detect_message_button(screenshot_path)
-        
-        if message_button_coords:
-            # Click at the detected coordinates
-            await self.page.mouse.click(message_button_coords[0], message_button_coords[1])
-            return True
-        return False
-            
     async def analyze_profile(self, profile_url, state):
         """Analyze an Instagram profile and determine if it's suitable for messaging."""
         try:
@@ -272,10 +258,8 @@ class InstagramMessageAutomator:
             
             # If DOM-based approach fails, try vision-based approach
             if not message_button:
-                success = await self.find_message_button_visual()
-                if not success:
-                    self.logger.error("Could not find message button using either method")
-                    return False, state
+                self.logger.error("Could not find message button using either method")
+                return False, state
             else:
                 # Get button position and move mouse
                 bounding_box = await message_button.bounding_box()

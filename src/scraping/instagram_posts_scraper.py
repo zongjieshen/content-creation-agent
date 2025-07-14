@@ -631,7 +631,7 @@ class InstagramPostsScraper:
         and constructs Instagram profile URLs for each tagged user.
         
         Returns:
-            List[Dict]: List of dictionaries containing username and profile_url
+            List[Dict]: List of dictionaries containing username, profile_url, and mention_count
         """
         try:
             with get_db_context() as (conn, cursor):
@@ -648,8 +648,7 @@ class InstagramPostsScraper:
                 rows = cursor.fetchall()
                 
                 # Process tagged users
-                tagged_users_set = set()  # Use a set to avoid duplicates
-                result = []
+                username_counts = {}  # Dictionary to track mention counts
                 
                 for row in rows:
                     tagged_users_str = row[0]
@@ -666,21 +665,24 @@ class InstagramPostsScraper:
                         if ':' in entry:
                             username, _ = entry.split(':', 1)  # We only need the username
                             
-                            # Skip if already processed
-                            if username in tagged_users_set:
-                                continue
-                            
-                            # Add to set to avoid duplicates
-                            tagged_users_set.add(username)
-                            
-                            # Construct Instagram profile URL
-                            profile_url = f"https://www.instagram.com/{username}/"
-                            
-                            # Add to result
-                            result.append({
-                                'username': username,
-                                'profile_url': profile_url
-                            })
+                            # Increment count for this username
+                            if username in username_counts:
+                                username_counts[username] += 1
+                            else:
+                                username_counts[username] = 1
+                
+                # Create result list with usernames, profile URLs, and mention counts
+                result = []
+                for username, count in username_counts.items():
+                    # Construct Instagram profile URL
+                    profile_url = f"https://www.instagram.com/{username}/"
+                    
+                    # Add to result
+                    result.append({
+                        'username': username,
+                        'profile_url': profile_url,
+                        'mention_count': count
+                    })
                 
                 logger = logging.getLogger(__name__)
                 logger.info(f"Loaded {len(result)} unique tagged users from ad posts")

@@ -1,7 +1,6 @@
 import random
 import asyncio
 import logging
-import cv2
 import numpy as np
 import json
 import hashlib
@@ -104,48 +103,6 @@ async def simulate_human_mouse_movement(page, target_x, target_y, current_mouse_
     
     # Return the new position
     return target_x, target_y
-
-
-# Visual detection
-def detect_message_button(screenshot_path):
-    """
-    Detect the message button in a screenshot using computer vision.
-    
-    Args:
-        screenshot_path: Path to the screenshot image
-        
-    Returns:
-        tuple or None: Coordinates of the message button if found, None otherwise
-    """
-    # Load the screenshot
-    img = cv2.imread(screenshot_path)
-    
-    # You could use template matching if you have a reference image of the button
-    # Or use more advanced techniques like object detection models
-    
-    # For a simple approach, you could look for the typical blue color of Instagram message buttons
-    # and their rectangular shape
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    
-    # Define range for Instagram blue color
-    lower_blue = np.array([100, 150, 150])
-    upper_blue = np.array([140, 255, 255])
-    
-    # Create a mask for blue color
-    mask = cv2.inRange(hsv, lower_blue, upper_blue)
-    
-    # Find contours in the mask
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    # Filter contours by size and shape to find button-like objects
-    for contour in contours:
-        x, y, w, h = cv2.boundingRect(contour)
-        # Check if the shape is button-like (rectangular with certain aspect ratio)
-        if 50 < w < 200 and 20 < h < 60 and 2 < w/h < 6:
-            # Return center coordinates of the button
-            return (x + w//2, y + h//2)
-    
-    return None
 
 
 # Typing functions
