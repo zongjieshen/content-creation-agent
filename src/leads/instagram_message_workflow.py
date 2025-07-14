@@ -5,7 +5,8 @@ import asyncio
 import logging
 import os
 import re
-import winreg
+if os.name == 'nt':  # 'nt' indicates Windows
+    import winreg
 from pathlib import Path
 from src.utils.env_loader import load_environment
 from datetime import datetime
