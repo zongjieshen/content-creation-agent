@@ -1,10 +1,12 @@
-from typing import TypedDict, Optional, Dict, Any, List, Callable
+from typing import TypedDict, Optional, Dict, Any
+from pydantic import Field
 import csv
 import shutil
 import asyncio
 import logging
 import os
 import re
+import tempfile
 if os.name == 'nt':  # 'nt' indicates Windows
     import winreg
 from pathlib import Path
@@ -54,7 +56,7 @@ class InstagramMessageState(BaseWorkflowState):
     delay: Optional[int]  # Delay between messages
     max_profiles: Optional[int]  # Maximum profiles to message
     automation_result: Optional[dict]  # Result from automation
-    screenshot_path: Optional[str]  # Path to current screenshot
+    screenshot_path: Field(default=os.path.join(tempfile.gettempdir(), "temp_screenshot.png"))
     current_profile_url: Optional[str]  # Current profile being processed
     message_text: Optional[str]  # Message to be sent
     message_confirmed: Optional[bool] = None  # Confirmation status for message
@@ -155,9 +157,7 @@ class InstagramMessageAutomator:
             await self.page.goto("https://www.instagram.com/accounts/login/")
             
             # Take a screenshot for the UI
-            screenshot_path = "temp_screenshot.png"
-            await self.page.screenshot(path=screenshot_path)
-            state["screenshot_path"] = screenshot_path
+            await self.page.screenshot(path=state["screenshot_path"])
             
             self.logger.info("Please log in to Instagram manually in the browser window.")
             
@@ -224,7 +224,6 @@ class InstagramMessageAutomator:
             # Store the generated message in state
             state["message_text"] = personalized_message
             state["analysis_result"] = analysis_result
-            state["screenshot_path"] = screenshot_path
             
             return True, state
             
@@ -303,10 +302,7 @@ class InstagramMessageAutomator:
                 # Reduce the delay to prevent timeout issues
                 await add_delay(2, self.logger)
                 
-                # Take a screenshot for the UI
-                screenshot_path = "temp_screenshot.png"
-                await self.page.screenshot(path=screenshot_path)
-                state["screenshot_path"] = screenshot_path
+                await self.page.screenshot(path=state["screenshot_path"])
                 
                 # Re-check if the element is still attached before interacting
                 try:
@@ -320,10 +316,7 @@ class InstagramMessageAutomator:
                     # Add a natural pause after typing (as if reviewing the message)
                     await add_random_delays(0.5, 2.0, self.logger)
                     
-                    # Take a screenshot after typing the message
-                    screenshot_path = "temp_screenshot.png"
-                    await self.page.screenshot(path=screenshot_path)
-                    state["screenshot_path"] = screenshot_path
+                    await self.page.screenshot(path=state["screenshot_path"])
                     
                     # Return state for message confirmation interrupt
                     return True, state
@@ -686,10 +679,8 @@ class InstagramMessageWorkflow(BaseWorkflow):
             # Navigate to Instagram login page
             await self.automator.page.goto("https://www.instagram.com/accounts/login/")
             
-            # Take a screenshot for the UI
-            screenshot_path = "temp_screenshot.png"
-            await self.automator.page.screenshot(path=screenshot_path)
-            state["screenshot_path"] = screenshot_path
+
+            await self.automator.page.screenshot(path=state["screenshot_path"])
             
             self.automator.logger.info("Please log in to Instagram manually in the browser window.")
             
@@ -923,45 +914,6 @@ async def record_sent_message(profile_url, message_text, success=True):
             return True
     except Exception as e:
         return False
-
-async def get_chrome_executable_path():
-    """Detect the installed Chrome browser path on Windows."""
-    chrome_path = None
-    
-    # Method 1: Check registry for Chrome installation path
-    try:
-        # Try the App Paths registry key first
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
-                           r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe") as key:
-            chrome_path = winreg.QueryValue(key, None)
-            if os.path.exists(chrome_path):
-                return chrome_path
-    except WindowsError:
-        pass
-    
-    # Method 2: Check ChromeHTML registry key
-    try:
-        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"ChromeHTML\shell\open\command") as key:
-            command = winreg.QueryValueEx(key, "")[0]
-            match = re.search('"(.*?)"', command)
-            if match and os.path.exists(match.group(1)):
-                return match.group(1)
-    except WindowsError:
-        pass
-    
-    # Method 3: Check common installation paths
-    common_paths = [
-        os.path.join(os.environ.get('PROGRAMFILES', 'C:\\Program Files'), 'Google\\Chrome\\Application\\chrome.exe'),
-        os.path.join(os.environ.get('PROGRAMFILES(X86)', 'C:\\Program Files (x86)'), 'Google\\Chrome\\Application\\chrome.exe'),
-        os.path.expanduser('~\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe')
-    ]
-    
-    for path in common_paths:
-        if os.path.exists(path):
-            return path
-    
-    # If Chrome is not found, return None
-    return None
 
 async def main():
     # Path to the CSV file
