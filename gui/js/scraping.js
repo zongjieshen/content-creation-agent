@@ -175,7 +175,7 @@ function displayScrapedUsers(users) {
         // Table header
         const thead = document.createElement('thead');
         const headerRow = document.createElement('tr');
-        const headers = ['Profile URL', 'Username'];
+        const headers = ['Username', 'Last Scraped'];
         
         headers.forEach(header => {
             const th = document.createElement('th');
@@ -306,7 +306,8 @@ function displayBrands(brands) {
     scrapingResults = brands;
     currentCsvData = brands.map(brand => ({
         profile_url: brand.profile_url || `https://www.instagram.com/${brand.username}/`,
-        username: brand.username || ''
+        username: brand.username || '',
+        mention_count: brand.mention_count || '0'
     }));
     
     // Show the "Use for Messaging" button when displaying brands

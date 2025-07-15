@@ -15,6 +15,7 @@ from src.utils.env_loader import load_environment
 # Update this import
 from src.utils.gemini_client import get_client
 from src.utils.config_loader import get_config
+from src.utils.resource_path import get_app_data_dir  # Add this import
 
 
 # Configure logging
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 load_environment()
 
 # Cache directory for analyzed screenshots
-CACHE_DIR = Path("screenshot_analysis_cache")
+CACHE_DIR = Path(get_app_data_dir()) / "screenshot_analysis_cache"
 CACHE_DIR.mkdir(exist_ok=True)
 
 # Delay functions
