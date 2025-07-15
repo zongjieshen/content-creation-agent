@@ -5,6 +5,7 @@ import asyncio
 import logging
 import os
 import re
+import sys
 if os.name == 'nt':  # 'nt' indicates Windows
     import winreg
 from pathlib import Path
@@ -92,18 +93,29 @@ class InstagramMessageAutomator:
 
         def find_chrome_path():
                 # Try environment PATH
-                chrome = shutil.which("chrome") or shutil.which("chrome.exe")
+                chrome = shutil.which("chrome") or shutil.which("chrome.exe") or shutil.which("Google Chrome")
                 if chrome:
                     return chrome
 
-                # Try common install locations on Windows
-                candidates = [
-                    Path("C:/Program Files/Google/Chrome/Application/chrome.exe"),
-                    Path("C:/Program Files (x86)/Google/Chrome/Application/chrome.exe")
-                ]
-                for path in candidates:
-                    if path.exists():
-                        return str(path)
+                # Check platform-specific locations
+                if sys.platform == 'darwin':  # macOS
+                    mac_candidates = [
+                        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                        "~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+                    ]
+                    for path in mac_candidates:
+                        expanded_path = os.path.expanduser(path)
+                        if os.path.exists(expanded_path):
+                            return expanded_path
+                            
+                elif os.name == 'nt':  # Windows
+                    win_candidates = [
+                        Path("C:/Program Files/Google/Chrome/Application/chrome.exe"),
+                        Path("C:/Program Files (x86)/Google/Chrome/Application/chrome.exe")
+                    ]
+                    for path in win_candidates:
+                        if path.exists():
+                            return str(path)
 
                 return None
 
