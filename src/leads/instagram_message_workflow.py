@@ -56,7 +56,7 @@ class InstagramMessageState(BaseWorkflowState):
     delay: Optional[int]  # Delay between messages
     max_profiles: Optional[int]  # Maximum profiles to message
     automation_result: Optional[dict]  # Result from automation
-    screenshot_path: Field(default=os.path.join(tempfile.gettempdir(), "temp_screenshot.png"))
+    screenshot_path: Field(default_factory=lambda: os.path.join(tempfile.gettempdir(), "temp_screenshot.png"))
     current_profile_url: Optional[str]  # Current profile being processed
     message_text: Optional[str]  # Message to be sent
     message_confirmed: Optional[bool] = None  # Confirmation status for message
