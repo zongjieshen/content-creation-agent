@@ -86,6 +86,9 @@ class InstagramMessageAutomator:
         
     async def setup(self, playwright):
         """Set up the Playwright browser instance with a persistent context."""
+        if IS_DOCKER:
+            self.logger.info("Skipping Playwright setup in Docker environment")
+            return
         # Use the provided playwright instance
         self.playwright = playwright
         
