@@ -7,8 +7,8 @@ services:
       dockerfile: Dockerfile
     container_name: content-creation-agent
     ports:
-      - "8080:8080"  # GUI server
-      - "8000:8000"  # Leads server
+      - "8085:8080"  # GUI server
+      - "8004:8000"  # Leads server
       - "8001:8001"  # Scraping server
       - "8002:8002"  # Captions server
     volumes:
