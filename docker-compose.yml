@@ -8,9 +8,9 @@ services:
     container_name: content-creation-agent
     ports:
       - "8085:8080"  # GUI server
-      - "8004:8000"  # Leads server
-      - "8001:8001"  # Scraping server
-      - "8002:8002"  # Captions server
+      - "8001:8001"  # Leads server
+      - "8002:8002"  # Scraping server
+      - "8005:8005"  # Captions server
     volumes:
       - ./uploads:/app/uploads
       - /DockerConfig/ContentCreate/data:/app/data

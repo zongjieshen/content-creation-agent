@@ -14,7 +14,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src.utils.resource_path import get_resource_path, is_bundled
 
 def install_playwright_if_missing():
-    """Set up Playwright Chromium browser path. No install in bundled mode."""
+    """Set up Playwright Chromium browser path. No install in bundled mode or Docker."""
+    # Skip Playwright installation in Docker
+    if os.environ.get('DOCKER_ENV') == 'true':
+        print("Docker mode: Skipping Playwright installation")
+        return
+        
     if is_bundled():
         # Onefile .exe extraction directory (e.g., _MEIPASS)
         browser_dir = get_resource_path("_internal/playwright/driver/package/.local-browsers")
