@@ -13,7 +13,8 @@ services:
       - "8002:8002"  # Captions server
     volumes:
       - ./uploads:/app/uploads
-      #- ./config.yaml:/app/config.yaml
+      - ./config.yaml:/app/config.yaml
+      - ./data:/app/data
       #- ./.env:/app/.env
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
