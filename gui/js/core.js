@@ -2,11 +2,9 @@
 // Use the same hostname as the current page
 const currentHostname = window.location.hostname;
 const currentPort = window.location.port;
-const isDocker = window.location.port === '8085'; // Port exposed for GUI in Docker
-
-const API_BASE_URL = isDocker ? `http://${currentHostname}:8001` : `http://${currentHostname}:${currentPort || 8001}`;
-const SCRAPING_API_URL = isDocker ? `http://${currentHostname}:8002` : `http://${currentHostname}:${currentPort || 8001}`;
-const CAPTIONS_API_URL = isDocker ? `http://${currentHostname}:8005` : `http://${currentHostname}:${currentPort || 8001}`;
+const API_BASE_URL = `http://${currentHostname}:8001`;
+const SCRAPING_API_URL = `http://${currentHostname}:8002`;
+const CAPTIONS_API_URL = `http://${currentHostname}:8005`;
 
 // Global state
 let sessionId = null;
