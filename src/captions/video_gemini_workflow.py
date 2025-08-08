@@ -234,6 +234,15 @@ class VideoGeminiWorkflow(BaseWorkflow):
         
         return state
     
+    def get_scraping_service_url():
+        """Get the correct scraping service URL based on environment"""
+        if os.environ.get('DOCKER_ENV') == 'true':
+            # In Docker, use service names from docker-compose.yml
+            return "http://scraping:8002/apply_style"
+        else:
+            # Local development
+            return "http://localhost:8002/apply_style"
+    
     @check_cancellation
     async def apply_style(self, state: VideoGeminiState):
         """Apply style to the analysis title and summary"""
@@ -249,10 +258,10 @@ class VideoGeminiWorkflow(BaseWorkflow):
         
         try:
             logger.info("Applying style to title and summary...")
-            
+            scraping_url = get_scraping_service_url()
             # Call the API endpoint to style the title
             response = self.http_client.post(
-                "http://localhost:8002/apply_style",
+                scraping_url,
                 json={
                     "content": analysis.title,
                     "target_label": target_label,

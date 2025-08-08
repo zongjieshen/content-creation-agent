@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # Main GUI Server
+  gui-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.gui
+    container_name: content-creation-gui
+    ports:
+      - "8085:8080"
+      - "8001:8001"
+    volumes:
+      - ./uploads:/app/uploads
+      - /DockerConfig/ContentCreate/data:/app/data
+      - /DockerConfig/ContentCreate/config:/app/config
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_CSE_ID=${GOOGLE_CSE_ID}
+      - DOCKER_ENV=true
+      - SCRAPING_SERVICE_URL=http://scraping-service:8002
+      - CAPTIONS_SERVICE_URL=http://captions-service:8005
+      - LEADS_SERVICE_URL=http://leads-service:8001
+    networks:
+      - content-network
+    depends_on:
+      - scraping-service
+      - captions-service
+      - leads-service
+    restart: unless-stopped
+
+  # Scraping Service
+  scraping-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.scraping
+    container_name: content-creation-scraping
+    ports:
+      - "8002:8002"
+    volumes:
+      - /DockerConfig/ContentCreate/data:/app/data
+      - /DockerConfig/ContentCreate/config:/app/config
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_CSE_ID=${GOOGLE_CSE_ID}
+      - DOCKER_ENV=true
+    networks:
+      - content-network
+    restart: unless-stopped
+
+  # Captions Service
+  captions-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.captions
+    container_name: content-creation-captions
+    ports:
+      - "8005:8005"
+    volumes:
+      - /DockerConfig/ContentCreate/data:/app/data
+      - /DockerConfig/ContentCreate/config:/app/config
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_CSE_ID=${GOOGLE_CSE_ID}
+      - DOCKER_ENV=true
+    networks:
+      - content-network
+    restart: unless-stopped
+
+  # Leads Service
+  leads-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.leads
+    container_name: content-creation-leads
+    ports:
+      - "8003:8001"
+    volumes:
+      - /DockerConfig/ContentCreate/data:/app/data
+      - /DockerConfig/ContentCreate/config:/app/config
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_CSE_ID=${GOOGLE_CSE_ID}
+      - DOCKER_ENV=true
+    networks:
+      - content-network
+    restart: unless-stopped
