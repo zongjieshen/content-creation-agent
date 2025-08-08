@@ -22,34 +22,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the application code
 COPY . .
 
-# Create startup script that handles config copying
-RUN echo '#!/bin/bash\
-\
-echo "Setting up Docker environment..."\
-\
-# Ensure the config directory exists\
-mkdir -p /app/config\
-\
-# Ensure the data directory exists\
-mkdir -p /app/data\
-\
-# Copy config.yaml from source to the config directory if it doesn't exist\
-if [ ! -f /app/config/config.yaml ]; then\
-    echo "Copying default config.yaml to /app/config/..."\
-    cp /app/config.yaml /app/config/config.yaml\
-fi\
-\
-# Ensure proper permissions\
-chmod -R 755 /app/data /app/config\
-\
-echo "Starting application..."\
-exec python main.py' > /app/startup.sh && chmod +x /app/startup.sh
-
-# Create necessary directories
-RUN mkdir -p uploads
+# Create necessary directories and copy config
+RUN mkdir -p /app/uploads /app/config /app/data && \
+    cp /app/config.yaml /app/config/config.yaml && \
+    chmod -R 755 /app/config /app/data
 
 # Expose ports
 EXPOSE 8080 8000 8001 8002
 
-# Use startup script as the command
-CMD ["/app/startup.sh"]
+# Use the original command
+CMD ["python", "main.py"]
