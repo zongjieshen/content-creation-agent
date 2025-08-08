@@ -9,7 +9,6 @@ services:
     container_name: content-creation-gui
     ports:
       - "8085:8080"
-      - "8001:8001"
     volumes:
       - ./uploads:/app/uploads
       - /DockerConfig/ContentCreate/data:/app/data
@@ -68,7 +67,7 @@ services:
       dockerfile: Dockerfile.leads
     container_name: content-creation-leads
     ports:
-      - "8003:8001"
+      - "8001:8001"
     volumes:
       - /DockerConfig/ContentCreate/data:/app/data
       - /DockerConfig/ContentCreate/config:/app/config
