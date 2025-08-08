@@ -1,6 +1,7 @@
 import logging
 import sqlite3
 import threading
+import os
 from pathlib import Path
 from .resource_path import get_resource_path, get_app_data_dir, is_bundled
 
@@ -22,8 +23,11 @@ def get_db_path():
     """
     global db_path
     if db_path is None:
-        # Use app data directory for persistent storage when running as executable
-        if is_bundled():
+        # Check if running in Docker environment
+        if os.environ.get('DOCKER_ENV') == 'true':
+            data_dir = Path('/app/data')
+        elif is_bundled():
+            # Use app data directory for persistent storage when running as executable
             data_dir = Path(get_app_data_dir())
         else:
             # In development mode, use the project's data directory

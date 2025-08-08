@@ -13,10 +13,10 @@ services:
       - "8002:8002"  # Captions server
     volumes:
       - ./uploads:/app/uploads
-      - ./config.yaml:/app/config.yaml
-      - ./data:/app/data
-      #- ./.env:/app/.env
+      - /DockerConfig/ContentCreate/data:/app/data
+      - /DockerConfig/ContentCreate/config:/app/config
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - GOOGLE_CSE_ID=${GOOGLE_CSE_ID}
+      - DOCKER_ENV=true
     restart: unless-stopped
