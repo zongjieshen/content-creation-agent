@@ -417,9 +417,164 @@ function loadSidebarState() {
 }
 
 // Modify the document.addEventListener('DOMContentLoaded') to include loading sidebar state
+// Add these functions to the existing core.js file
+
+// Mobile-specific enhancements
 document.addEventListener('DOMContentLoaded', async () => {
     await initializeSession();
     setupEventListeners();
-    loadSidebarState(); // Add this line
+    setupMobileEnhancements(); // Add this new function call
     updateSessionStatus('Connected');
 });
+
+function setupMobileEnhancements() {
+    // Detect mobile device
+    const isMobile = window.innerWidth <= 768;
+    
+    if (isMobile) {
+        // Add mobile-specific event listeners
+        setupTouchGestures();
+        setupKeyboardHandling();
+        setupViewportAdjustments();
+    }
+    
+    // Handle window resize
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            handleResponsiveResize();
+        }, 250);
+    });
+}
+
+function setupTouchGestures() {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    
+    document.addEventListener('touchstart', (e) => {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+    });
+    
+    document.addEventListener('touchend', (e) => {
+        if (!touchStartX || !touchStartY) return;
+        
+        const touchEndX = e.changedTouches[0].clientX;
+        const touchEndY = e.changedTouches[0].clientY;
+        
+        const deltaX = touchStartX - touchEndX;
+        const deltaY = touchStartY - touchEndY;
+        
+        // Swipe detection
+        if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+            if (deltaX > 0) {
+                // Swipe left - next tab
+                handleTabSwipe('next');
+            } else {
+                // Swipe right - previous tab
+                handleTabSwipe('prev');
+            }
+        }
+    });
+}
+
+function handleTabSwipe(direction) {
+    const tabs = ['search', 'scraping', 'message', 'video'];
+    const activeTab = document.querySelector('.nav-item.active');
+    if (!activeTab) return;
+    
+    const currentTab = activeTab.dataset.tab;
+    const currentIndex = tabs.indexOf(currentTab);
+    
+    let newIndex;
+    if (direction === 'next') {
+        newIndex = (currentIndex + 1) % tabs.length;
+    } else {
+        newIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    }
+    
+    switchTab(tabs[newIndex]);
+}
+
+function setupKeyboardHandling() {
+    // Handle virtual keyboard appearance on mobile
+    const inputs = document.querySelectorAll('input, textarea, select');
+    
+    inputs.forEach(input => {
+        input.addEventListener('focus', () => {
+            document.body.classList.add('keyboard-open');
+            // Scroll input into view
+            setTimeout(() => {
+                input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 100);
+        });
+        
+        input.addEventListener('blur', () => {
+            document.body.classList.remove('keyboard-open');
+        });
+    });
+}
+
+function setupViewportAdjustments() {
+    // Prevent zoom on input focus for iOS
+    const metaViewport = document.querySelector('meta[name=viewport]');
+    if (metaViewport) {
+        metaViewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+    }
+}
+
+function handleResponsiveResize() {
+    const isMobile = window.innerWidth <= 768;
+    const sidebar = document.querySelector('.sidebar');
+    
+    if (isMobile) {
+        // Ensure sidebar is in mobile mode
+        sidebar.classList.remove('collapsed');
+        localStorage.setItem('sidebarCollapsed', 'false');
+    } else {
+        // Restore desktop sidebar state
+        const wasCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+        if (wasCollapsed) {
+            sidebar.classList.add('collapsed');
+        } else {
+            sidebar.classList.remove('collapsed');
+        }
+    }
+}
+
+// Add CSS for keyboard handling
+const mobileStyles = `
+    @media (max-width: 768px) {
+        body.keyboard-open .chat-input-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            border-top: 1px solid #e5e5e7;
+            z-index: 1001;
+            padding: 12px;
+        }
+        
+        body.keyboard-open .chat-container {
+            padding-bottom: 80px;
+        }
+        
+        body.keyboard-open .content {
+            padding-bottom: 120px;
+        }
+    }
+`;
+
+// Inject mobile styles
+const styleSheet = document.createElement('style');
+styleSheet.textContent = mobileStyles;
+document.head.appendChild(styleSheet);
+
+// Add smooth scrolling for mobile
+if ('ontouchstart' in window) {
+    document.documentElement.style.webkitTouchCallout = 'none';
+    document.documentElement.style.webkitUserSelect = 'none';
+    document.documentElement.style.userSelect = 'none';
+}
