@@ -18,6 +18,19 @@ document.addEventListener('DOMContentLoaded', () => {
         targetLabelToggle.addEventListener('change', function() {
             toggleLabel.textContent = this.checked ? 'Non-Ad' : 'Ad';
         });
+        
+        // Create and append location input
+        const locationContainer = document.createElement('div');
+        locationContainer.className = 'location-input-container';
+        
+        const locationInput = document.createElement('input');
+        locationInput.type = 'text';
+        locationInput.id = 'location-input';
+        locationInput.className = 'location-input';
+        locationInput.placeholder = 'Enter location (optional)';
+        
+        locationContainer.appendChild(locationInput);
+        targetLabelToggle.parentElement.parentElement.appendChild(locationContainer);
     }
     
     if (videoFileInput) {
@@ -277,6 +290,10 @@ async function analyzeVideo() {
     const targetLabelToggle = document.getElementById('target_label');
     const targetLabel = targetLabelToggle && targetLabelToggle.checked ? 'non-ad' : 'ad';
     
+    // Get location value if provided
+    const locationInput = document.getElementById('location-input');
+    const location = locationInput ? locationInput.value.trim() : '';
+    
     // Set current operation
     currentOperation = 'video_analysis';
     isCancelled = false;
@@ -293,7 +310,7 @@ async function analyzeVideo() {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                user_input: 'analyze video',
+                location: location ? `${location}` : '',
                 target_label: targetLabel
             })
         });

@@ -35,6 +35,7 @@ class VideoGeminiState(BaseWorkflowState):
     user_input: str  # User input from BaseWorkflowState
     video_path: Optional[str] = None  # Path to the video file
     target_label: str = "ad"  # Target style label ("ad" or "non-ad")
+    location: Optional[str] = None  # Location for video analysis
     video_file: Optional[Any] = None  # Uploaded video file object
     analysis_result: Optional[VideoAnalysis] = None  # Result of video analysis
     report: str
@@ -77,14 +78,20 @@ class VideoGeminiWorkflow(BaseWorkflow):
         """Extract parameters from user input and find video file"""
         state = self.update_step(state, "parameter_extraction")
         
-        # Extract target_label from user input if provided
+        # Extract parameters from user input
         user_input = state.get("user_input", "")
+        lines = [line.strip() for line in user_input.split("\n") if line.strip()]
         
-        # Check if user specified a target label
-        if "non-ad" in user_input.lower():
-            state["target_label"] = "non-ad"
+        # Extract location and target_label from the input
+        if len(lines) > 2:
+            state["location"] = lines[0]
+            state["target_label"] = lines[1]
         else:
-            state["target_label"] = "ad"  # Default to "ad"
+            state["target_label"] = lines[0]
+        
+        # Log extracted parameters
+        logger.info(f"Extracted location: {state.get('location')}")
+        logger.info(f"Extracted target_label: {state.get('target_label')}")
         
         # Find the video file in the uploads directory
         upload_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
@@ -190,7 +197,13 @@ class VideoGeminiWorkflow(BaseWorkflow):
         
         try:
             # Get prompt from config
-            prompt = config.get('video_analysis', {}).get('analysis_prompt', '')
+            base_prompt = config.get('video_analysis', {}).get('analysis_prompt', '')
+            
+            # Add location context if provided
+            if state.get("location") and state["location"].strip():
+                prompt = f"{base_prompt}\nLocation context: {state['location']}"
+            else:
+                prompt = base_prompt
             
             # Create the prompt parts
             prompt_parts = [
@@ -321,6 +334,7 @@ class VideoGeminiWorkflow(BaseWorkflow):
             state["workflow_status"] = "error"
         
         return state
+    
 
 # Create workflow instance
 video_gemini_workflow = VideoGeminiWorkflow()

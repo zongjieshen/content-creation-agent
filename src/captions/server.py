@@ -30,7 +30,7 @@ class FileUploadResponse(BaseModel):
     message: str = Field(max_length=4096, pattern=r'[\s\S]*', default="Video uploaded successfully")
 
 class VideoAnalysisRequest(BaseModel):
-    user_input: str = Field(default="analyze video", description="User input for video analysis")
+    location: str = Field(default="", description="Optional location context for video analysis")
     target_label: str = Field(default="ad", description="Target style label (ad or non-ad)")
 
 class VideoAnalysisResponse(BaseModel):
@@ -170,8 +170,7 @@ async def analyze_video(request: VideoAnalysisRequest):
         resp_id = str(uuid4())
         
         # Construct user input with target label
-        user_input = f"{request.user_input} {request.target_label}"
-        
+        user_input = f"{request.location}\n{request.target_label}"
         logger.info(f"Starting video analysis with input: {user_input}")
         
         task = asyncio.create_task(
