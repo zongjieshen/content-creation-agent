@@ -74,11 +74,14 @@ video_analysis:
     Analyze this video and provide:
     1. A detailed and engaging title (at least 10-15 words) that captures the essence of the content
     2. A concise summary of the content
-    3. Include the location of the video if available
+    3. If you can confidently identify the location based on clear visual or metadata evidence, include it in the format "📍 {location}". If not certain, leave the location field empty.
     4. A list of relevant hashtags for social media
     
-    Format your response as structured data with a title field, summary field and hashtags list.
-    For each hashtag, include the tag text and categorize it (general, niche, trending, etc.).
+    Format your response as structured data with:
+    - title: the engaging title (string)
+    - summary: concise content summary (string)
+    - location: string, optional, "📍 {location}" if certain, otherwise empty string
+    - hashtags: list of hashtags, each with tag text and category (general, niche, trending, etc.)
 
 # Instagram collaboration workflow configuration
 instagram_collaboration_workflow:

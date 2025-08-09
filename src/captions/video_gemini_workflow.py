@@ -27,6 +27,7 @@ class Hashtag(BaseModel):
 class VideoAnalysis(BaseModel):
     title: str
     summary: str
+    location: Optional[str] = None  # Format as "📍 {location}" if available
     hashtags: List[Hashtag]
     key_topics: Optional[List[str]] = None
 
@@ -197,13 +198,7 @@ class VideoGeminiWorkflow(BaseWorkflow):
         
         try:
             # Get prompt from config
-            base_prompt = config.get('video_analysis', {}).get('analysis_prompt', '')
-            
-            # Add location context if provided
-            if state.get("location") and state["location"].strip():
-                prompt = f"{base_prompt}\nLocation context: {state['location']}"
-            else:
-                prompt = base_prompt
+            prompt = config.get('video_analysis', {}).get('analysis_prompt', '')
             
             # Create the prompt parts
             prompt_parts = [
@@ -230,6 +225,7 @@ class VideoGeminiWorkflow(BaseWorkflow):
             # Store the analysis result
             state["analysis_result"] = analysis
             state["workflow_status"] = "analyzed"
+            analysis.location = state.get("location") or analysis.location
             
         except Exception as e:
             error_msg = f"Gemini analysis failed: {str(e)}"
@@ -319,6 +315,9 @@ class VideoGeminiWorkflow(BaseWorkflow):
             # Format the results as a markdown report
             report = f"{analysis.title}\n\n"
             
+            if analysis.location:
+                report += f"📍 location: {analysis.location}\n\n"
+                
             for hashtag in analysis.hashtags:
                 report += f"- {hashtag.tag}\n"
             

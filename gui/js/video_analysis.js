@@ -331,15 +331,24 @@ async function analyzeVideo() {
                 const lines = report.split('\n');
                 const title = lines[0] || 'No title generated';
                 
+                // Try to find the location line (starts with 📍 location:)
+                const locationLine = lines.find(line => line.trim().startsWith('📍 location:'));
+
                 // Extract hashtags (starting from line 2, skipping the empty line after title)
                 const hashtags = lines.slice(2)
                     .filter(line => line.trim().startsWith('- '))
                     .map(line => line.trim().substring(2)) // Remove the '- ' prefix
                     .join(' ');
                 
-                // Display combined results
-                document.getElementById('analysis-content').textContent = `${title}\n\n${hashtags}`;
-                
+
+                // Build the output string
+                let output = `${title}\n\n`;
+                if (locationLine) {
+                    output += `${locationLine}\n\n`;
+                }
+                output += hashtags;    
+                document.getElementById('analysis-content').textContent = output;
+            
                 // Show results container
                 document.getElementById('analysis-results').style.display = 'block';
             } else {
