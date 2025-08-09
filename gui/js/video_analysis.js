@@ -349,19 +349,25 @@ function copyResults() {
     // Create a temporary textarea element
     const textarea = document.createElement('textarea');
     textarea.value = content;
-    textarea.setAttribute('readonly', ''); // Make it readonly to be less obtrusive
-    textarea.style.position = 'absolute';
-    textarea.style.left = '-9999px'; // Move outside the screen
+    textarea.style.cssText = 'position:fixed;top:0;left:0;opacity:0;z-index:-1;pointer-events:none;';
+    // Ensure the element is visible on iOS but not disturbing the layout
+    textarea.style.width = '1px';
+    textarea.style.height = '1px';
     document.body.appendChild(textarea);
     
-    // For iOS devices
-    if (navigator.userAgent.match(/ipad|iphone/i)) {
+    // Handle iOS devices
+    if (navigator.userAgent.match(/ipad|ipod|iphone/i)) {
+        textarea.contentEditable = true;
+        textarea.readOnly = false;
+        
+        // Create range and select
         const range = document.createRange();
         range.selectNodeContents(textarea);
         const selection = window.getSelection();
         selection.removeAllRanges();
         selection.addRange(range);
         textarea.setSelectionRange(0, 999999);
+        textarea.focus();
     } else {
         textarea.select();
     }
