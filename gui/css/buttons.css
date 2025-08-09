@@ -1,0 +1,95 @@
+/* Buttons */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    gap: 8px;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background: #007aff;
+    color: #ffffff;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: #0056cc;
+    transform: translateY(-1px);
+}
+
+.btn-secondary {
+    background: #f2f2f7;
+    color: #1d1d1f;
+    border: 1px solid #d1d1d6;
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: #e5e5ea;
+    transform: translateY(-1px);
+}
+
+.btn-danger {
+    background-color: #ff3b30;
+    border-color: #ff3b30;
+    color: white;
+}
+
+.btn-danger:hover {
+    background-color: #d63530;
+    border-color: #d63530;
+}
+
+.start-btn {
+    background: #34c759;
+    color: #ffffff;
+    border-color: #34c759;
+    font-weight: 600;
+    padding: 10px 20px;
+}
+
+.start-btn:hover {
+    background: #2eb350;
+    color: #ffffff;
+    border-color: #2eb350;
+    transform: translateY(-1px);
+}
+
+.pagination-btn {
+    padding: 8px 16px;
+    font-size: 14px;
+}
+
+.interrupt-btn {
+    display: inline-block;
+    margin: 4px 8px 4px 0;
+    padding: 8px 16px;
+    background: #ffffff;
+    border: 1px solid #d1d1d6;
+    border-radius: 20px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.interrupt-btn:hover {
+    background: #007aff;
+    color: #ffffff;
+    border-color: #007aff;
+}
+
+.action-buttons .btn.active {
+    background: #007aff;
+    color: #ffffff;
+}

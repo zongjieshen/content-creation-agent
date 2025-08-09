@@ -5,8 +5,9 @@ import tabnanny
 from uuid import uuid4
 from typing import Dict, Any
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -25,6 +26,7 @@ video_analysis_stop_event = None
 class FileUploadResponse(BaseModel):
     filename: str = Field(max_length=4096, pattern=r'[\s\S]*')
     filepath: str = Field(max_length=4096, pattern=r'[\s\S]*')
+    video_url: str = Field(max_length=4096, pattern=r'[\s\S]*')
     message: str = Field(max_length=4096, pattern=r'[\s\S]*', default="Video uploaded successfully")
 
 class VideoAnalysisRequest(BaseModel):
@@ -77,11 +79,36 @@ async def startup_event():
     try:
         # Initialize workflow instance
         app.video_workflow = VideoGeminiWorkflow()
+        
+        # Mount the uploads directory
+        uploads_path = get_resource_path("uploads")
+        os.makedirs(uploads_path, exist_ok=True)
+        app.mount("/videos", StaticFiles(directory=uploads_path), name="videos")
+        
         logger.info("Video analysis server initialization completed successfully")
         
     except Exception as e:
         logger.error(f"Failed to initialize video analysis server: {str(e)}")
         raise RuntimeError(f"Video analysis server initialization failed: {str(e)}")
+
+@app.get("/video/{filename}", tags=["Video Streaming"])
+async def get_video(filename: str):
+    """Stream a video file"""
+    try:
+        video_path = get_resource_path(os.path.join("uploads", filename))
+        
+        if not os.path.exists(video_path):
+            raise HTTPException(status_code=404, detail="Video not found")
+            
+        return FileResponse(
+            video_path,
+            media_type="video/mp4",
+            filename=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"Error streaming video: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # API Endpoints
 @app.get("/health", tags=["Health"], response_model=HealthResponse)
@@ -118,9 +145,14 @@ async def upload_video(file: UploadFile = File(...)):
         await file.close()
         
         logger.info(f"Video uploaded successfully: {file_path}")
+        
+        # Create video URL based on the filename
+        video_url = f"/videos/{file.filename}"
+        
         return FileUploadResponse(
             filename=file.filename,
             filepath=file_path,
+            video_url=video_url,
             message="Video uploaded successfully"
         )
         

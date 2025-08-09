@@ -63,11 +63,105 @@ async function handleVideoUpload(e) {
     // Ensure we're on the video analysis tab
     switchTab('video');
     
-    // Update status
-    const videoStatus = document.getElementById('video-status');
-    if (videoStatus) {
-        videoStatus.textContent = `Selected: ${file.name}`;
+    // Remove existing video container if it exists
+    const existingContainer = document.getElementById('video-container');
+    if (existingContainer) {
+        existingContainer.remove();
     }
+
+    // Create new video container
+    const videoContainer = document.createElement('div');
+    videoContainer.id = 'video-container';
+    videoContainer.className = 'video-thumbnail-container';
+    // Append to the video-upload-section instead of video-upload-area
+    const uploadSection = document.querySelector('.video-upload-section');
+    uploadSection.appendChild(videoContainer);
+    
+    // Create play button
+    const playButton = document.createElement('div');
+    playButton.className = 'play-button';
+    videoContainer.appendChild(playButton);
+    
+    // Create video preview
+    const videoPreview = document.createElement('video');
+    videoPreview.id = 'video-preview';
+    videoPreview.controls = false;
+    videoPreview.style.width = '100%';
+    videoPreview.preload = 'metadata';
+    videoPreview.crossOrigin = 'anonymous'; // Allow cross-origin video loading
+    videoPreview.playsInline = true; // Better mobile support
+    
+    // Add loading indicator
+    const loadingIndicator = document.createElement('div');
+    loadingIndicator.className = 'video-loading';
+    loadingIndicator.textContent = 'Loading video...';
+    videoContainer.appendChild(loadingIndicator);
+    
+    // Handle video loading states
+    videoPreview.addEventListener('loadstart', () => {
+        loadingIndicator.style.display = 'block';
+    });
+    
+    videoPreview.addEventListener('canplay', () => {
+        loadingIndicator.style.display = 'none';
+    });
+    
+    videoPreview.addEventListener('error', (e) => {
+        console.error('Video loading error:', videoPreview.error);
+        loadingIndicator.textContent = 'Error loading video';
+        loadingIndicator.classList.add('error');
+    });
+    
+    videoContainer.appendChild(videoPreview);
+    
+    // Function to handle play state
+    const handlePlay = () => {
+        videoPreview.controls = true;
+        videoPreview.play()
+            .then(() => {
+                videoPreview.classList.add('playing');
+                playButton.style.display = 'none';
+            })
+            .catch(error => {
+                console.error('Error playing video:', error);
+            });
+    };
+    
+    // Add click events
+    playButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handlePlay();
+    });
+    
+    videoContainer.addEventListener('click', () => {
+        if (videoPreview.paused) {
+            handlePlay();
+        } else {
+            videoPreview.pause();
+        }
+    });
+    
+    // Add video event listeners
+    videoPreview.addEventListener('pause', () => {
+        playButton.style.display = 'flex';
+        videoPreview.classList.remove('playing');
+    });
+    
+    videoPreview.addEventListener('play', () => {
+        playButton.style.display = 'none';
+        videoPreview.classList.add('playing');
+    });
+    
+    videoPreview.addEventListener('ended', () => {
+        playButton.style.display = 'flex';
+        videoPreview.classList.remove('playing');
+        videoPreview.controls = false;
+    });
+    
+    // Set video source and show preview
+    videoPreview.src = URL.createObjectURL(file);
+    videoPreview.style.display = 'block';
+
     
     // Enable analyze button
     const analyzeBtn = document.getElementById('generate-captions-btn');
@@ -83,6 +177,12 @@ async function uploadVideo(file) {
     showLoading(true);
     currentOperation = 'video_upload';
     isCancelled = false;
+    
+    // Revoke the previous video preview URL to free up memory
+    const videoPreview = document.getElementById('video-preview');
+    if (videoPreview && videoPreview.src) {
+        URL.revokeObjectURL(videoPreview.src);
+    }
     
     try {
         const formData = new FormData();
@@ -103,11 +203,55 @@ async function uploadVideo(file) {
             const data = await response.json();
             console.log('Upload response:', data);
             
-            // Update status
-            const videoStatus = document.getElementById('video-status');
-            if (videoStatus) {
-                videoStatus.textContent = `Ready to analyze: ${file.name}`;
-                videoStatus.classList.add('success');
+            // Create or update status message in video container
+            let videoStatus = document.querySelector('.video-thumbnail-container .video-status');
+            if (!videoStatus) {
+                videoStatus = document.createElement('div');
+                videoStatus.className = 'video-status';
+                document.querySelector('.video-thumbnail-container').appendChild(videoStatus);
+            }
+            videoStatus.textContent = `Ready to analyze: ${file.name}`;
+            videoStatus.classList.add('success');
+
+            // Ensure video preview is visible and properly styled
+            const videoPreview = document.getElementById('video-preview');
+            if (videoPreview) {
+                // Update video source to use the video endpoint
+                const videoUrl = `${CAPTIONS_API_URL}/video/${encodeURIComponent(file.name)}`;
+                console.log('Loading video from:', videoUrl);
+                
+                // Load the video
+                videoPreview.src = videoUrl;
+                videoPreview.load(); // Force reload with new source
+                
+                // Handle video loading
+                videoPreview.addEventListener('loadeddata', () => {
+                    videoPreview.style.display = 'block';
+                    videoPreview.classList.add('ready');
+                    document.getElementById('video-upload-area').style.padding = '12px';
+                    
+                    // Reset video to thumbnail state
+                    videoPreview.controls = false;
+                    videoPreview.currentTime = 0;
+                    videoPreview.classList.remove('playing');
+                });
+                
+                // Handle video loading error
+                videoPreview.addEventListener('error', () => {
+                    console.error('Error loading video:', videoPreview.error);
+                    alert('Error loading video. Please try again.');
+                });
+                
+                // Show play button
+                const playButton = document.querySelector('.play-button');
+                if (playButton) {
+                    playButton.style.display = 'flex';
+                }
+                
+                // Generate thumbnail
+                videoPreview.addEventListener('loadeddata', () => {
+                    videoPreview.currentTime = 1; // Set to 1 second to get a good thumbnail
+                });
             }
             
         } else {

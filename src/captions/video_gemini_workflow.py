@@ -189,16 +189,8 @@ class VideoGeminiWorkflow(BaseWorkflow):
             return state
         
         try:
-            # Default prompt
-            prompt = """
-            Analyze this video and provide:
-            1. A detailed and engaging title (at least 10-15 words) that captures the essence of the content
-            2. A concise summary of the content
-            3. A list of relevant hashtags for social media
-            
-            Format your response as structured data with a title field, summary field and hashtags list.
-            For each hashtag, include the tag text and categorize it (general, niche, trending, etc.).
-            """
+            # Get prompt from config
+            prompt = config.get('video_analysis', {}).get('analysis_prompt', '')
             
             # Create the prompt parts
             prompt_parts = [
