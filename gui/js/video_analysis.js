@@ -343,24 +343,41 @@ async function analyzeVideo() {
 
 function copyResults() {
     const content = document.getElementById('analysis-content').textContent;
+    const copyBtn = document.getElementById('copy-results-btn');
+    const originalText = copyBtn.innerHTML;
     
-    // Copy to clipboard
-    navigator.clipboard.writeText(content)
-        .then(() => {
-            // Show success message
-            const copyBtn = document.getElementById('copy-results-btn');
-            const originalText = copyBtn.innerHTML;
-            
-            copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
-            
-            setTimeout(() => {
-                copyBtn.innerHTML = originalText;
-            }, 2000);
-        })
-        .catch(err => {
-            console.error('Failed to copy text: ', err);
-            alert('Failed to copy to clipboard');
-        });
+    // Create a temporary textarea element
+    const textarea = document.createElement('textarea');
+    textarea.value = content;
+    textarea.setAttribute('readonly', ''); // Make it readonly to be less obtrusive
+    textarea.style.position = 'absolute';
+    textarea.style.left = '-9999px'; // Move outside the screen
+    document.body.appendChild(textarea);
+    
+    // For iOS devices
+    if (navigator.userAgent.match(/ipad|iphone/i)) {
+        const range = document.createRange();
+        range.selectNodeContents(textarea);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        textarea.setSelectionRange(0, 999999);
+    } else {
+        textarea.select();
+    }
+    
+    try {
+        document.execCommand('copy');
+        copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        
+        setTimeout(() => {
+            copyBtn.innerHTML = originalText;
+        }, 2000);
+    } catch (err) {
+        console.error('Failed to copy text: ', err);
+    } finally {
+        document.body.removeChild(textarea);
+    }
 }
 
 // Cancel video analysis
