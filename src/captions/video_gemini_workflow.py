@@ -83,7 +83,7 @@ class VideoGeminiWorkflow(BaseWorkflow):
         lines = [line.strip() for line in user_input.split("\n") if line.strip()]
         
         # Extract location and target_label from the input
-        if len(lines) > 2:
+        if len(lines) > 1:
             state["location"] = lines[0]
             state["target_label"] = lines[1]
         else:
