@@ -313,10 +313,11 @@ class VideoGeminiWorkflow(BaseWorkflow):
         
         try:
             # Format the results as a markdown report
-            report = f"{analysis.title}\n\n"
-            
+            separator = "\n---SPLIT---\n";
+            report = f"{analysis.title}{separator}"
+
             if analysis.location:
-                report += f"📍 location: {analysis.location}\n\n"
+                report += f"📍 location: {analysis.location}{separator}"
                 
             for hashtag in analysis.hashtags:
                 report += f"- {hashtag.tag}\n"

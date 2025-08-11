@@ -24,11 +24,12 @@ caption_clustering:
     Examples of non-ad style captions:
     {examples_text}
     
-    Now rewrite the following content in the same style as the examples, making it informative but not promotional:
+    Now rewrite the following content in the same style as the examples:
     
     "{content}"
     
     Make sure your response maintains all the factual information while matching the tone and style patterns of the examples.
+    ALWAYS include a casual emoji at the end
     DO NOT include hashtags
 # Hashtags configuration
 hashtags:

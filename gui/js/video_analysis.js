@@ -325,32 +325,37 @@ async function analyzeVideo() {
             const data = await response.json();
             console.log('Analysis response:', data);
             
-            if (data.status === 'completed') {
-                // Parse the report to extract title and hashtags
-                const report = data.report || '';
-                const lines = report.split('\n');
-                const title = lines[0] || 'No title generated';
-                
-                // Try to find the location line (starts with 📍 location:)
-                const locationLine = lines.find(line => line.trim().startsWith('📍 location:'));
+        if (data.status === 'completed') {
+            const SEPARATOR = '\n---SPLIT---\n';
+            const report = data.report || '';
 
-                // Extract hashtags (starting from line 2, skipping the empty line after title)
-                const hashtags = lines.slice(2)
-                    .filter(line => line.trim().startsWith('- '))
-                    .map(line => line.trim().substring(2)) // Remove the '- ' prefix
-                    .join(' ');
-                
+            // Split into parts using the unique separator
+            const parts = report.split(SEPARATOR);
 
-                // Build the output string
-                let output = `${title}\n\n`;
-                if (locationLine) {
-                    output += `${locationLine}\n\n`;
-                }
-                output += hashtags;    
-                document.getElementById('analysis-content').textContent = output;
-            
-                // Show results container
-                document.getElementById('analysis-results').style.display = 'block';
+            // First part is always the title
+            const title = parts[0]?.trim() || 'No title generated';
+
+            // Find location if present
+            const locationPart = parts.find(p => p.trim().startsWith('📍 location:'));
+            const location = locationPart ? locationPart.trim() : '';
+
+            // Extract hashtags: all parts that contain lines starting with "- "
+            const hashtagLines = parts
+                .flatMap(p => p.split('\n'))
+                .filter(line => line.trim().startsWith('- '))
+                .map(line => line.trim().substring(2)); // remove "- "
+
+            // Build output
+            let output = `${title}\n\n`;
+            if (location) {
+                output += `${location}\n\n`;
+            }
+            output += hashtagLines.join(' ');
+
+            // Display in DOM
+            document.getElementById('analysis-content').textContent = output;
+            document.getElementById('analysis-results').style.display = 'block';
+
             } else {
                 // Show error
                 alert(`Analysis failed: ${data.error_message || 'Unknown error'}`);
