@@ -332,3 +332,25 @@ input:checked + .toggle-slider:before {
     font-size: 14px;
     color: #8e8e93;
 }
+
+/* Transcript section styling */
+.transcript-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+#transcript-section {
+    margin-top: 20px;
+    border-top: 1px solid #e5e5ea;
+    padding-top: 20px;
+}
+
+#transcript-content {
+    white-space: pre-wrap;
+    font-size: 14px;
+    line-height: 1.5;
+    max-height: 300px;
+    overflow-y: auto;
+}

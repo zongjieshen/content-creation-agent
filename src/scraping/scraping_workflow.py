@@ -150,27 +150,44 @@ class InstagramScrapingWorkflow(BaseWorkflow):
         state = self.update_step(state, "embedding_building")
         
         try:
-            # Use load_posts_from_db with captions_only=True instead of relying on scraping_result
             scraper = InstagramPostsScraper()
-            posts = scraper.load_posts_from_db(captions_only=True) 
+            posts = scraper.load_posts_from_db()
             
             if not posts:
                 state["error_message"] = "No posts available for embedding"
                 state["workflow_status"] = "error"
                 return state
             
-            logger.info(f"Starting caption processing with {len(posts)} posts")
+            logger.info(f"Starting caption and transcript processing with {len(posts)} posts")
             
-            # Prepare caption tuples (caption, is_ad)
-            caption_tuples = []
+            # Create a dictionary with post_url as keys
+            posts_dict = {}
+            
             for post in posts:
+                post_url = post.get('post_url', '')
                 caption = post.get('caption_text', '')
                 is_ad = post.get("is_paid_partnership", False) or post.get("has_sponsorship_keywords", False)
-                if caption:
-                    caption_tuples.append((caption, is_ad))
+                transcript = post.get("video_transcript", "")
+                
+                # Create tags dictionary with post metadata
+                tags = {
+                    "post_url": post_url,
+                    "username": post.get("username", ""),
+                    "media_type": post.get("media_type", ""),
+                    "category": post.get("category", ""),
+                    "label": "ad" if is_ad else "non-ad",
+
+                }
+                
+                # Add to posts dictionary
+                posts_dict[post_url] = {
+                    'caption': caption,
+                    'transcript': transcript,
+                    'tags': tags
+                }
             
-            # Process captions directly without creating a class instance
-            result = process_captions(caption_tuples)
+            result = process_captions(posts_dict)
+
             
             # Update state with results
             state["embedding_result"] = result
@@ -191,10 +208,12 @@ class InstagramScrapingWorkflow(BaseWorkflow):
             
             # 1. Clear database tables
             from src.utils.db_client import ensure_db_initialized
+            from src.utils.embedding_client import ensure_embedding_initialized
             ensure_db_initialized(force_reset=True)
+            ensure_embedding_initialized(force_reset=True)
             
             
-            logger.info("Database tables cleared successfully.")
+            logger.info("Database tables and embedding db cleared successfully.")
 
 # Create workflow instance
 instagram_scraping_workflow = InstagramScrapingWorkflow()

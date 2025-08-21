@@ -4,11 +4,32 @@ import random
 import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
+from pydantic import BaseModel
 from ..utils.db_client import get_db_context
+from ..utils.gemini_client import get_client
+import concurrent.futures
+from functools import partial
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Define Pydantic models for structured output
+class VideoAnalysis(BaseModel):
+    transcript: str
+    category: str  # Category classification
+
+# Predefined list of categories for classification
+CONTENT_CATEGORIES = [
+    "Fitness",
+    "Food",
+    "Travel",
+    "Lifestyle",
+    "Intro"
+    "Parenting",
+    "Other"
+]
+
 
 class InstagramPostsScraper:
     def __init__(self):
@@ -154,6 +175,63 @@ class InstagramPostsScraper:
         logger.info(f"Adding random delay of {delay:.2f} seconds")
         await asyncio.sleep(delay)
     
+    async def process_video_transcripts(self, posts: List[Dict[str, Any]], stop_event: Optional[asyncio.Event] = None) -> None:
+        """Process video transcripts for multiple posts in parallel using a thread pool.
+        
+        Args:
+            posts (List[Dict[str, Any]]): List of post data
+            stop_event (Optional[asyncio.Event], optional): Event to check for cancellation
+        """
+        # Filter posts with video URLs
+        video_posts = [post for post in posts if post.get("video_url")]
+        if not video_posts:
+            logger.info("No video posts to process")
+            return
+        
+        logger.info(f"Processing transcripts for {len(video_posts)} video posts")
+        
+        # Create a thread-safe lock for updating posts
+        lock = asyncio.Lock()
+        
+        # Create a partial function for processing a single video post
+        async def process_single_video(post):
+            try:
+                # Check for cancellation
+                await self.check_stop_event(stop_event)
+                
+                video_url = post.get("video_url")
+                if not video_url:
+                    return
+                
+                logger.info(f"Processing transcript for video: {video_url[:50]}...")
+                analysis_result = await self.extract_transcript_from_video(video_url)
+                
+                # Update post data with thread safety
+                async with lock:
+                    post["video_transcript"] = analysis_result["transcript"]
+                    post["category"] = analysis_result["category"]
+                    
+                logger.info(f"Completed transcript processing for video: {video_url[:50]}...")
+            except Exception as e:
+                logger.error(f"Error processing video transcript: {str(e)}")
+        
+        # Create tasks for concurrent processing with a maximum of 12 concurrent tasks
+        tasks = []
+        semaphore = asyncio.Semaphore(10)  # Limit to 10 concurrent tasks
+        
+        async def bounded_process(post):
+            async with semaphore:
+                await process_single_video(post)
+        
+        # Create tasks for all video posts
+        for post in video_posts:
+            tasks.append(asyncio.create_task(bounded_process(post)))
+        
+        # Wait for all tasks to complete
+        if tasks:
+            await asyncio.gather(*tasks)
+            logger.info(f"Completed processing transcripts for all {len(video_posts)} video posts")
+    
     async def scrape_user_posts(self, username: str, max_limit: int = 50, stop_event: Optional[asyncio.Event] = None) -> List[Dict[str, Any]]:
         """Scrape posts from an Instagram user.
         
@@ -211,7 +289,7 @@ class InstagramPostsScraper:
                 # Process posts
                 for item in items:
                     # Check for cancellation periodically
-                    if posts_scraped % 10 == 0:  # Check every 10 posts
+                    if posts_scraped % 5 == 0:  # Check every 5 posts
                         await self.check_stop_event(stop_event)
                         
                     if posts_scraped >= max_limit:
@@ -243,23 +321,138 @@ class InstagramPostsScraper:
             except asyncio.CancelledError:
                 logger.info(f"Scraping cancelled for user {username} after {posts_scraped} posts")
                 return all_posts
-            except Exception as e:
-                logger.error(f"Error scraping page {page}: {str(e)}")
-                break
         
-        logger.info(f"Finished scraping. Total posts collected: {len(all_posts)}")
+        # After collecting all posts, process video transcripts in parallel
+        if all_posts:
+            logger.info(f"Processing video transcripts for {len(all_posts)} posts using multi-threading")
+            await self.process_video_transcripts(all_posts, stop_event)
+        
         return all_posts
     
-    def extract_post_data(self, item: Dict[str, Any]) -> Dict[str, Any]:
+    async def extract_transcript_from_video(self, video_url: str) -> Dict[str, str]:
         """
-        Extract relevant data from a post item.
+        Extract transcript from a video URL using Gemini API.
         
         Args:
-            item (Dict): Raw post data from Instagram API
+            video_url (str): URL of the video to extract transcript from
             
         Returns:
-            Dict: Cleaned post data
+            Dict[str, str]: Dictionary containing transcript and category
         """
+        try:
+            # Get Gemini client
+            client = get_client()
+            if not client:
+                logger.error("Failed to initialize Gemini client")
+                return {"transcript": "", "category": ""}
+            
+            # Create a prompt for transcript extraction and category classification
+            prompt = """Please analyze this video and provide the following:
+            1. A complete transcript of all spoken content in the video.
+            2. Classify the content into exactly ONE of the following categories: Fitness, Food, Travel, Lifestyle, Intro, Parenting, Other.
+            
+            Format your response as JSON with the following structure:
+            {
+                "transcript": "full transcript here",
+                "category": "selected category here"
+            }
+            """
+            
+            # Download video content
+            async with httpx.AsyncClient() as client_http:
+                response = await client_http.get(video_url)
+                if response.status_code != 200:
+                    logger.error(f"Failed to download video from {video_url}: {response.status_code}")
+                    return {"transcript": "", "category": ""}
+                
+                video_content = response.content
+            
+            # Create a temporary file to store the video content
+            import tempfile
+            import os
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+                temp_file.write(video_content)
+                temp_file_path = temp_file.name
+            
+            try:
+                # Upload the file to Gemini API
+                video_file = client.files.upload(
+                    file=temp_file_path,
+                    config={
+                        "display_name": "video_for_analysis",
+                        "mime_type": "video/mp4"
+                    }
+                )
+                
+                # Wait for the file to be processed and become ACTIVE
+                import time
+                max_wait_time = 60  # Maximum wait time in seconds
+                start_time = time.time()
+                
+                logger.info(f"Uploaded file as: {video_file.name} with initial state: {video_file.state.name}")
+                
+                while video_file.state.name == "PROCESSING":
+                    # Check if we've exceeded the maximum wait time
+                    if time.time() - start_time > max_wait_time:
+                        logger.error(f"Timeout waiting for file processing after {max_wait_time} seconds")
+                        return {"transcript": "", "category": ""}
+                        
+                    logger.info("File is still PROCESSING. Waiting 5 seconds...")
+                    await asyncio.sleep(5)  # Increased wait time between checks
+                    video_file = client.files.get(name=video_file.name)  # Fetch the latest file state
+                    logger.info(f"Current state: {video_file.state.name}")
+                
+                if video_file.state.name == "ACTIVE":
+                    logger.info(f"File '{video_file.name}' is now ACTIVE and ready for use.")
+                elif video_file.state.name == "FAILED":
+                    error_message = f"File '{video_file.name}' processing FAILED."
+                    if hasattr(video_file, 'state_reason') and video_file.state_reason:
+                        error_message += f" Reason: {video_file.state_reason}"
+                    logger.error(error_message)
+                    return {"transcript": "", "category": ""}
+                else:
+                    error_message = f"File '{video_file.name}' is in an unexpected state: {video_file.state.name}"
+                    logger.error(error_message)
+                    return {"transcript": "", "category": ""}
+                    
+                # Generate analysis using Gemini with structured output
+                prompt_parts = [
+                    prompt,
+                    video_file  # Pass the File object directly
+                ]
+                
+                response = client.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=prompt_parts,
+                    config={
+                        'response_mime_type': 'application/json',
+                        'response_schema': VideoAnalysis,
+                    }
+                )
+                
+                # Parse the response into a VideoAnalysis object
+                try:
+                    analysis = response.parsed
+                    logger.info(f"Successfully extracted transcript and category from video")
+                    return {"transcript": analysis.transcript, "category": analysis.category}
+                except Exception as e:
+                    # Fallback to text parsing if structured output fails
+                    logger.warning(f"Failed to parse structured output: {str(e)}")
+                
+            finally:
+                # Clean up the temporary file
+                try:
+                    os.unlink(temp_file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete temporary file: {str(e)}")
+                
+        except Exception as e:
+            logger.error(f"Error extracting transcript from video: {str(e)}")
+            return {"transcript": "", "category": ""}
+    
+    def extract_post_data(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract relevant data from a post item."""
         try:
             # Basic post information
             post_data = {
@@ -297,8 +490,13 @@ class InstagramPostsScraper:
             video_versions = item.get("video_versions", [])
             if video_versions:
                 post_data["video_url"] = video_versions[0].get("url", "")
+                # Initialize transcript and category fields (will be populated later)
+                post_data["video_transcript"] = ""
+                post_data["category"] = ""
             else:
                 post_data["video_url"] = ""
+                post_data["video_transcript"] = ""
+                post_data["category"] = ""
             
             # Location
             location = item.get("location")
@@ -418,6 +616,8 @@ class InstagramPostsScraper:
                         post.get("commerciality_status", ""),
                         post.get("has_sponsorship_keywords", 0),
                         post.get("tagged_users", ""),
+                        post.get("video_transcript", ""),
+                        post.get("category", ""),
                         post.get("scrape_date", "")
                     ))
                 
@@ -428,8 +628,14 @@ class InstagramPostsScraper:
                     comment_count, play_count, video_duration, caption_text, username, 
                     full_name, is_verified, image_url, video_url, location_name, 
                     location_city, post_url, is_paid_partnership, commerciality_status, 
-                    has_sponsorship_keywords, tagged_users, scrape_date
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    has_sponsorship_keywords, tagged_users, video_transcript, category, scrape_date
+                ) VALUES (
+                    :id, :code, :taken_at, :taken_at_formatted, :media_type, :like_count, 
+                    :comment_count, :play_count, :video_duration, :caption_text, :username, 
+                    :full_name, :is_verified, :image_url, :video_url, :location_name, 
+                    :location_city, :post_url, :is_paid_partnership, :commerciality_status, 
+                    :has_sponsorship_keywords, :tagged_users, :video_transcript, :category, :scrape_date
+                )
                 """, batch_data)
                 
                 logger.info(f"Saved {len(posts)} posts for {username} to database using batch execution")
@@ -528,7 +734,7 @@ class InstagramPostsScraper:
             return []
 
     @staticmethod
-    def load_posts_from_db(username=None, limit=None, order_by="taken_at", order="DESC",  since_date=None, captions_only=False):
+    def load_posts_from_db(username=None, limit=None, order_by="taken_at", order="DESC",  since_date=None):
         """
         Load posts from the database with filtering options.
         
@@ -538,7 +744,6 @@ class InstagramPostsScraper:
             order_by (str, optional): Column to order results by (default: taken_at)
             order (str, optional): Sort order, ASC or DESC (default: DESC)
             since_date (str, optional): Filter posts since date (format: YYYY-MM-DD)
-            captions_only (bool, optional): If True, only return captions and sponsorship flags
             
         Returns:
             List[Dict]: List of post data dictionaries
@@ -546,12 +751,8 @@ class InstagramPostsScraper:
         try:
             with get_db_context() as (conn, cursor):
                 # Build query with parameters
-                if captions_only:
-                    # Only select caption and sponsorship fields
-                    query = "SELECT caption_text, is_paid_partnership, has_sponsorship_keywords, username, taken_at_formatted FROM instagram_posts WHERE 1=1"
-                else:
-                    # Select all fields
-                    query = "SELECT * FROM instagram_posts WHERE 1=1"
+                # Select all fields
+                query = "SELECT * FROM instagram_posts WHERE 1=1"
                 
                 params = []
                 
@@ -599,15 +800,14 @@ class InstagramPostsScraper:
                         else:
                             post_dict[column_names[i]] = value
                     
-                    # Only process tagged_users if we're not in captions_only mode and the field exists
-                    if not captions_only and "tagged_users" in post_dict and post_dict.get("tagged_users"):
+                    if "tagged_users" in post_dict and post_dict.get("tagged_users"):
                         tagged_list = []
                         for tag in post_dict["tagged_users"].split(";"):
                             if ":" in tag:
                                 username, full_name = tag.split(":", 1)
                                 tagged_list.append({"user": {"username": username, "full_name": full_name}})
                         post_dict["tagged_users"] = tagged_list
-                    elif not captions_only and "tagged_users" in post_dict:
+                    elif "tagged_users" in post_dict:
                         post_dict["tagged_users"] = []
                         
                     results.append(post_dict)

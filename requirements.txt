@@ -18,7 +18,7 @@ playwright>=1.39.0
 
 # Data processing and storage
 numpy==1.23.5
-faiss-cpu>=1.7.3
+chromadb
 
 # Security and sanitization
 bleach>=6.0.0

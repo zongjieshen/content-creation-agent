@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from pathlib import Path
 
 from src.base_workflow import BaseWorkflow, BaseWorkflowState, check_cancellation
+from src.utils.embedding_client import EMBEDDING_TYPES
 from src.utils.gemini_client import get_client
 from src.utils.config_loader import get_config
 from langgraph.graph import END
@@ -26,9 +27,11 @@ class Hashtag(BaseModel):
 
 class VideoAnalysis(BaseModel):
     title: str
-    summary: str
+    transcript: str
     location: Optional[str] = None  # Format as "📍 {location}" if available
     hashtags: List[Hashtag]
+    category: str
+
     key_topics: Optional[List[str]] = None
 
 class VideoGeminiState(BaseWorkflowState):
@@ -238,7 +241,7 @@ class VideoGeminiWorkflow(BaseWorkflow):
     
     @check_cancellation
     async def apply_style(self, state: VideoGeminiState):
-        """Apply style to the analysis title and summary"""
+        """Apply style to the analysis title and transcript"""
         def get_scraping_service_url():
             """Get the correct scraping service URL based on environment"""
             if os.environ.get('DOCKER_ENV') == 'true':
@@ -247,6 +250,48 @@ class VideoGeminiWorkflow(BaseWorkflow):
             else:
                 # Local development
                 return "http://localhost:8002/apply_style"
+        
+        async def apply_content_style(content: str, embedding_type: EMBEDDING_TYPES) -> str:
+            """Shared function to apply styling to content"""
+            try:
+                logger.info(f"Applying style to {embedding_type}")
+                scraping_url = get_scraping_service_url()
+                
+                # Build filter_tags with both label and category information
+                filter_tags = {
+                    "label": target_label
+                }
+                
+                # Add category from analysis if available
+                #if analysis and analysis.category:
+                #    filter_tags["category"] = analysis.category.lower()
+                
+                response = self.http_client.post(
+                    scraping_url,
+                    json={
+                        "content": content,
+                        "num_examples": 3,
+                        "embedding_type": embedding_type,
+                        "filter_tags": filter_tags
+                    }
+                )
+                
+                if response.status_code == 200:
+                    styled_data = response.json()
+                    styled_content = styled_data["styled_content"]
+                    
+                    # Remove any hashtags from the content
+                    styled_content = re.sub(r'\s*#\w+', '', styled_content).strip()
+                    
+                    logger.info(f"Style applied successfully to {embedding_type}")
+                    return styled_content
+                else:
+                    logger.error(f"Error applying style to {embedding_type}: {response.text}")
+                    return content  # Return original content if styling fails
+                    
+            except Exception as e:
+                logger.error(f"Error styling {embedding_type}: {str(e)}")
+                return content  # Return original content if styling fails
             
         state = self.update_step(state, "style_application")
         
@@ -259,37 +304,21 @@ class VideoGeminiWorkflow(BaseWorkflow):
             return state
         
         try:
-            logger.info("Applying style to title and summary...")
-            scraping_url = get_scraping_service_url()
-            # Call the API endpoint to style the title
-            response = self.http_client.post(
-                scraping_url,
-                json={
-                    "content": analysis.title,
-                    "target_label": target_label,
-                    "num_examples": 3
-                }
-            )
+            # Apply styling to both title and transcript using the shared function
+            styled_title = await apply_content_style(analysis.title, "caption")
+            styled_transcript = await apply_content_style(analysis.transcript, "transcript")
             
-            if response.status_code == 200:
-                styled_data = response.json()
-                analysis.title = styled_data["styled_content"]
-                
-                # Remove any hashtags from the title
-                analysis.title = re.sub(r'\s*#\w+', '', analysis.title).strip()
-                
-                # Add common UGC hashtags from config
-                hashtag_list = config.get('hashtags', {}).get(f'{target_label}_hashtags', [])
-                common_hashtags = [Hashtag(tag=tag) for tag in hashtag_list]
-                analysis.hashtags.extend(common_hashtags)
-                
-                logger.info("Style applied successfully")
-                state["analysis_result"] = analysis
-                state["workflow_status"] = "styled"
-            else:
-                logger.error(f"Error applying style: {response.text}")
-                state["error_message"] = f"Error applying style: {response.text}"
-                state["workflow_status"] = "error"
+            # Update the analysis with styled content
+            analysis.title = styled_title
+            analysis.transcript = styled_transcript
+            
+            hashtag_list = config.get('hashtags', {}).get(f'{target_label}_hashtags', [])
+            common_hashtags = [Hashtag(tag=tag) for tag in hashtag_list]
+            analysis.hashtags.extend(common_hashtags)
+            
+            logger.info("Style applied successfully to both title and transcript")
+            state["analysis_result"] = analysis
+            state["workflow_status"] = "styled"
                 
         except Exception as e:
             error_msg = f"Style application failed: {str(e)}"
@@ -317,12 +346,15 @@ class VideoGeminiWorkflow(BaseWorkflow):
             report = f"{analysis.title}{separator}"
 
             if analysis.location:
-                report += f"📍 location: {analysis.location}{separator}"
+                report += f"{analysis.location}{separator}"
                 
             for hashtag in analysis.hashtags:
                 report += f"- {hashtag.tag}\n"
-            
-            
+                
+            if analysis.transcript:
+                report += f"{separator} Transcript:"
+                report += f"{analysis.transcript}{separator}"
+
             # Add the report and path to the state
             state["report"] = report
             state["workflow_status"] = "completed"

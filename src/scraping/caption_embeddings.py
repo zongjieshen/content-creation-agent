@@ -1,11 +1,17 @@
 import json
 import hashlib
 import logging
+import os
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
-import faiss
 from src.utils.gemini_client import get_client
-from src.utils.db_client import get_db_context, ensure_db_initialized
+from src.utils.embedding_client import (
+    EMBEDDING_TYPES,
+    ensure_embedding_initialized, 
+    save_embeddings_batch, search_similar_embeddings, 
+    get_collection_stats as get_embedding_stats,
+    load_all_text_hashes
+)
 from src.utils.config_loader import get_config
 
 # Configure logging
@@ -13,7 +19,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 config = get_config()
-
 CLUSTERING_CONFIG = config.get('caption_clustering', {})
 LABELS = ["ad", "non-ad"]
 
@@ -21,44 +26,8 @@ def get_caption_hash(caption: str) -> str:
     """Generate a hash for a caption."""
     return hashlib.md5(caption.encode('utf-8')).hexdigest()
 
-# Global variables for FAISS indices
-faiss_indices = {}
+# Global embeddings cache (kept for performance)
 embeddings_cache = {}
-
-def save_caption_embeddings_batch(caption_data_list: List[Tuple[str, str, np.ndarray]]):
-    """Save multiple captions with their embeddings to the database in a single transaction.
-    
-    Args:
-        caption_data_list: List of tuples containing (caption_text, label, embedding)
-    
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    if not caption_data_list:
-        logger.warning("No caption data provided for batch save")
-        return False
-        
-    try:
-        # Prepare data for batch insert
-        batch_data = []
-        for caption_text, label, embedding in caption_data_list:
-            caption_hash = get_caption_hash(caption_text)
-            embedding_json = json.dumps(embedding.tolist())
-            batch_data.append((caption_hash, caption_text, label, embedding_json))
-        
-        # Execute batch insert
-        with get_db_context() as (conn, cursor):
-            cursor.executemany(
-                "INSERT OR REPLACE INTO caption_embeddings (caption_hash, caption_text, label, embedding_json) VALUES (?, ?, ?, ?)",
-                batch_data
-            )
-        
-        logger.info(f"Saved {len(batch_data)} caption embeddings to database in batch")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Error saving caption embeddings batch to database: {str(e)}")
-        return False
 
 def get_embedding(text: str) -> np.ndarray:
     """Get embedding for text, using cache if available."""
@@ -80,122 +49,120 @@ def get_embedding(text: str) -> np.ndarray:
     )
     embedding = np.array(result.embeddings[0].values, dtype=np.float32)
     
-    # Cache the embedding (but don't save to DB yet as we don't have a label)
+    # Cache the embedding
     embeddings_cache[text_hash] = embedding.tolist()
     
     return embedding
 
-def build_in_memory_faiss_indices(caption_data_list=None):
-    """
-    Build in-memory FAISS indices for each label.
+def save_caption_embeddings_batch(caption_data_list: List[Tuple[str, str, np.ndarray]], 
+                                tags_list: Optional[List[Dict[str, Any]]] = None) -> bool:
+    """Save multiple captions with their embeddings to the unified database.
     
     Args:
-        caption_data_list: Optional list of tuples containing (caption_text, label, embedding)
-                          If provided, builds indices from this data instead of loading from database
+        caption_data_list: List of tuples containing (caption_text, label, embedding)
+        tags_list: Optional list of metadata dictionaries for each caption
+    
+    Returns:
+        bool: True if successful, False otherwise
     """
-    logger.info("Building in-memory FAISS indices" + 
-               (" from provided data" if caption_data_list else " from database"))
-    
-    global faiss_indices, embeddings_cache
-    
-    # Initialize empty dictionaries
-    faiss_indices = {}
-    embeddings_cache = {}
-    label_captions = {label: [] for label in LABELS}  # Now a local variable
+    if not caption_data_list:
+        logger.warning("No caption data provided for batch save")
+        return False
     
     try:
-        # Group embeddings by label
-        label_embeddings = {label: [] for label in LABELS}
+        ensure_embedding_initialized()
         
-        if caption_data_list:
-            # Use provided caption data
-            for caption_text, label, embedding in caption_data_list:
-                if label in LABELS:
-                    # Add caption to the appropriate label group
-                    label_captions[label].append(caption_text)
-                    
-                    # Add embedding to the appropriate label group
-                    label_embeddings[label].append(embedding)
-                    #embeddings_cache[get_caption_hash(caption_text)] = embedding
+        # Prepare data for unified collection
+        embeddings_data = []
+        skipped_count = 0
+        existing_hashes = load_all_text_hashes()
+        
+        for i, (caption_text, embedding) in enumerate(caption_data_list):
+                
+            caption_hash = get_caption_hash(caption_text)
+            if caption_hash in existing_hashes:
+                logger.info(f"Skipping duplicate caption with hash {caption_hash}")
+                skipped_count += 1
+                continue
+            
+            # Prepare metadata with label and tags
+            metadata = {
+                "caption_hash": caption_hash
+            }
+            
+            # Add custom tags if provided
+            if tags_list and i < len(tags_list):
+                metadata.update(tags_list[i])
+            
+            # Get post_url from tags if available, otherwise use caption_hash as fallback
+            post_id = tags_list[i].get("post_url", caption_hash) if tags_list and i < len(tags_list) else caption_hash
+            
+            embeddings_data.append({
+                "id": post_id,  # Use post_url as ID instead of caption_hash
+                "embedding": embedding.tolist(),
+                "metadata": metadata,
+                "document": caption_text
+            })
+        
+        # Save to unified collection if we have any non-duplicate entries
+        if embeddings_data:
+            success = save_embeddings_batch(embeddings_data)
+            
+            if success:
+                logger.info(f"Saved {len(embeddings_data)} caption embeddings to unified collection (skipped {skipped_count} duplicates)")
+            
+            return success
         else:
-            # Load all caption data from database
-            with get_db_context() as (conn, cursor):
-                cursor.execute("SELECT caption_hash, caption_text, label, embedding_json FROM caption_embeddings")
-                rows = cursor.fetchall()
-                
-                for row in rows:
-                    caption_hash, caption_text, label, embedding_json = row
-                    
-                    if label in LABELS:
-                        # Add caption to the appropriate label group
-                        label_captions[label].append(caption_text)
-                        
-                        # Add embedding to the appropriate label group
-                        embedding = np.array(json.loads(embedding_json), dtype=np.float32)
-                        label_embeddings[label].append(embedding)
-                        embeddings_cache[caption_hash] = embedding
+            logger.info(f"No new captions to save (skipped {skipped_count} duplicates)")
+            return True
         
-        # Build FAISS index for each label
-        for label in LABELS:
-            if len(label_embeddings[label]) > 0:
-                embeddings = np.array(label_embeddings[label])
-                
-                # Create FAISS index
-                dimension = embeddings.shape[1]
-                index = faiss.IndexFlatL2(dimension)
-                index.add(embeddings)
-                
-                # Store in memory
-                faiss_indices[label] = {
-                    'index': index,
-                    'captions': label_captions[label]
-                }
-                
-                logger.info(f"Built in-memory FAISS index for '{label}' with {len(label_captions[label])} captions")
-    
     except Exception as e:
-        logger.error(f"Error building in-memory FAISS indices: {str(e)}")
-    
-    return faiss_indices
+        logger.error(f"Error saving caption embeddings batch: {str(e)}")
+        return False
 
+def generate_similar_embeddings_wrapper(content_to_style: str, 
+                            embedding_type: str,
+                            num_examples: int = 3, 
+                            filter_tags: Optional[Dict[str, Any]] = None) -> List[str]:
+    """Generate captions similar to the given content using unified database.
+    
+    Args:
+        content_to_style: The content to find similar captions for
+        num_examples: Number of similar captions to return
+        filter_tags: Optional metadata filters for more targeted search
+    
+    Returns:
+        List[str]: List of similar caption texts
+    """
+    
+    try:
+        # Get embedding for the content
+        content_embedding = get_embedding(content_to_style)
+        if (embedding_type == "transcript"):
+            if "label" in filter_tags:
+                del filter_tags["label"]
 
-def generate_similar_captions(content_to_style: str, target_label: str, num_examples: int = 3) -> List[str]:
-    """Generate captions similar to the given content for a specific label."""
-    logger.info(f"Generating {num_examples} similar captions for label '{target_label}'")
-    
-    # Load FAISS indices from memory or build them if not available
-    global faiss_indices
-    if not faiss_indices:
-        faiss_indices = build_in_memory_faiss_indices()
-    
-    if target_label not in faiss_indices:
-        raise ValueError(f"No FAISS index found for label '{target_label}'. Available labels: {list(faiss_indices.keys())}")
-    
-    # Get embedding for the content
-    content_embedding = get_embedding(content_to_style)
-    content_embedding = content_embedding.reshape(1, -1)
-    
-    # Search in the target label's FAISS index
-    index_data = faiss_indices[target_label]
-    index = index_data['index']
-    captions = index_data['captions']
-    
-    # Perform similarity search
-    k = min(num_examples, index.ntotal)  # Use index.ntotal instead of len(captions)
-    if k == 0:
-        return []
+        # Search with tag filtering
+        results = search_similar_embeddings(
+            query_embedding=content_embedding,
+            embedding_type=embedding_type,
+            tag_filters=filter_tags,
+            n_results=num_examples
+        )
         
-    distances, indices = index.search(content_embedding, k)
-    
-    # Return the most similar captions
-    similar_captions = [captions[idx] for idx in indices[0]]
-    
-    logger.info(f"Found {len(similar_captions)} similar captions for '{target_label}'")
-    return similar_captions
+        # Extract caption texts from results
+        similar_captions = [result["document"] for result in results]
+        
+        logger.info(f"Found {len(similar_captions)} similar captions")
+        return similar_captions
+        
+    except Exception as e:
+        logger.error(f"Error generating similar captions: {str(e)}")
+        return []
 
-def generate_content_in_style(label: str, content_to_style: str, examples: List[str] = None) -> str:
+def generate_content_in_style(label: str, content_to_style: str, embedding_type: str,  examples: List[str] = None) -> str:
     """Generate new content based on the specified label style (ad or non-ad)."""
-    logger.info(f"Generating content in {label} style")
+    logger.info(f"Generating {embedding_type} content")
     
     # Initialize client
     client = get_client()
@@ -207,9 +174,19 @@ def generate_content_in_style(label: str, content_to_style: str, examples: List[
         raise ValueError(f"Invalid label: {label}. Must be one of {LABELS}")
     
     try:
-        # Get prompt template from config
-        prompt_key = f"{label.replace('-', '_')}_prompt_template"
-        prompt_template = CLUSTERING_CONFIG.get(prompt_key, "")
+        # Get the appropriate clustering config based on embedding type
+        if embedding_type == "transcript":
+            clustering_config = config.get('transcript_clustering', {})
+            # For transcripts, use the single template (no ad/non-ad distinction)
+            prompt_template = clustering_config.get('template', "")
+        else:
+            # For captions, use the existing logic with ad/non-ad templates
+            clustering_config = config.get('caption_clustering', {})
+            prompt_key = f"{label.replace('-', '_')}_prompt_template"
+            prompt_template = clustering_config.get(prompt_key, "")
+        
+        if not prompt_template:
+            raise ValueError(f"No prompt template found for {embedding_type}")
                     
         # Format examples if available
         examples_text = ""
@@ -237,103 +214,201 @@ def generate_content_in_style(label: str, content_to_style: str, examples: List[
         logger.error(f"Error generating content: {str(e)}", exc_info=True)
         return f"Error generating content: {str(e)}"
 
-def apply_style_to_content(content: str, target_label: str, num_examples: int = 3) -> str:
-    """Apply the specified style to content using similar examples from FAISS vector search."""
-    logger.info(f"Applying {target_label} style to content")
+def apply_style_to_content(content: str, embedding_type: EMBEDDING_TYPES, num_examples: int = 3, 
+                         filter_tags: Optional[Dict[str, Any]] = None) -> str:
+    """Apply the specified style to content using similar examples from unified database."""
     
-    # Ensure database is initialized
-    ensure_db_initialized()
+    # Initialize filter_tags if None
+    if filter_tags is None:
+        filter_tags = {}
     
-    # Validate label
-    if target_label not in LABELS:
-        raise ValueError(f"Invalid label: {target_label}. Must be one of {LABELS}")
+    custom_filters = load_custom_filters(embedding_type)
+    if custom_filters:
+        filter_tags.update(custom_filters)
     
-    # Load FAISS indices
-    faiss_indices = load_faiss_indices()
-    
-    if not faiss_indices:
-        raise ValueError("No FAISS indices available. Please process captions first.")
-    
-    if target_label not in faiss_indices:
-        raise ValueError(f"No FAISS index found for label '{target_label}'. Available labels: {list(faiss_indices.keys())}")
-    
+    target_label = filter_tags.get("label", "non-ad")
     # Get similar examples
     examples = None
     try:
-        examples = generate_similar_captions(content, target_label, num_examples)
+        examples = generate_similar_embeddings_wrapper(content, embedding_type, num_examples, filter_tags)
+
         logger.info(f"Found {len(examples)} similar examples for styling")
     except Exception as e:
         logger.warning(f"Could not find similar examples: {str(e)}. Proceeding without examples.")
     
     # Generate styled content
-    styled_content = generate_content_in_style(target_label, content, examples)
+    styled_content = generate_content_in_style(target_label, content, embedding_type, examples)
     
     return styled_content
 
-# Add this new function
-def load_faiss_indices():
-    """Load FAISS indices from database."""
-    global faiss_indices
-    
-    # If indices are already loaded, return them
-    if faiss_indices:
-        return faiss_indices
-    
-    # Otherwise, build them from database
-    return build_in_memory_faiss_indices()
+def get_collection_stats() -> Dict[str, Any]:
+    """Get statistics about the unified embedding collection."""
+    try:
+        return get_embedding_stats()
+    except Exception as e:
+        logger.error(f"Error getting collection stats: {str(e)}")
+        return {}
 
-# Add this new function to initialize everything
 def initialize_caption_utils():
-    """Initialize caption utils by loading embeddings cache and building FAISS indices."""
-    logger.info("Initializing caption utils...")
+    """Initialize caption utils by ensuring embedding client is ready."""
+    logger.info("Initializing caption utils with unified embedding database...")
     
-    # Ensure database is initialized
-    ensure_db_initialized()
+    ensure_embedding_initialized()
+    stats = get_collection_stats()
+    logger.info(f"Caption utils initialized with unified collection: {stats}")
+    return stats
+
+def process_captions(posts_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Complete pipeline: generate embeddings and store in unified database.
     
-    # Load FAISS indices
-    global faiss_indices
-    faiss_indices = load_faiss_indices()
+    Args:
+        - posts_dict: Dictionary with post_url as keys and post data as values
     
-    logger.info(f"Caption utils initialized with {len(faiss_indices)} FAISS indices")
-    return faiss_indices
-
-
-def process_captions(caption_tuples: List[Tuple[str, bool]]) -> Dict[str, Any]:
-    """Complete pipeline: cluster, label, and build indices."""
-    logger.info(f"Processing {len(caption_tuples)} captions")
-
+    Returns:
+        Dict[str, Any]: Summary of processing results
+    """
+    
+    logger.info(f"Processing {len(posts_dict)} posts with unified database")
+    
     # Collect caption data for batch processing
     caption_data_list = []
+    transcript_data_list = []
+    tags_list = []
     
-    # Initialize label_captions dictionary
-    label_captions = {label: [] for label in LABELS}
+    # Process each post in the dictionary
+    for post_url, post_data in posts_dict.items():
+        caption = post_data.get('caption', '')
+        transcript = post_data.get('transcript', '')
+        tags = post_data.get('tags', {})
+        
+        tags_list.append(tags)
+
+        if caption:
+            embedding = get_embedding(caption)
+            caption_data_list.append((caption, embedding))
+        
+        if transcript:
+            transcript_embedding = get_embedding(transcript)
+            transcript_data_list.append((transcript, transcript_embedding))
     
-    # Populate label_captions based on is_ad flag
-    for caption, is_ad in caption_tuples:
-        label = "ad" if is_ad else "non-ad"
-        
-        # Get embedding
-        embedding = get_embedding(caption)
-        
-        # Add to batch data
-        caption_data_list.append((caption, label, embedding))
-        
-        # Add to label_captions for in-memory index
-        if label in label_captions:
-            label_captions[label].append(caption)
-        else:
-            label_captions[label] = [caption]
+    # Save all caption embeddings to unified collection in a single batch operation
+    caption_success = save_caption_embeddings_batch(caption_data_list, tags_list)
+    transcript_success = save_transcript_embeddings_batch(transcript_data_list, tags_list)
     
-    # Save all embeddings in a single batch operation
-    save_caption_embeddings_batch(caption_data_list)
-    faiss_indices = build_in_memory_faiss_indices(caption_data_list)
+    # Get collection stats
+    stats = get_collection_stats()
     
     # Return summary
     result = {
-        'total_captions': len(caption_tuples),
-        'labels_distribution': {label: len(label_captions[label]) for label in LABELS if label in label_captions},
-        'faiss_indices_built': list(faiss_indices.keys())
+        'total_posts': len(posts_dict),
+        'total_captions': len(caption_data_list),
+        'total_transcripts': len(transcript_data_list),
+        'collection_stats': stats,
+        'caption_success': caption_success,
+        'transcript_success': transcript_success,
+        'success': caption_success and transcript_success
     }
     
     logger.info(f"Processing complete: {result}")
     return result
+
+def save_transcript_embeddings_batch(transcript_data_list: List[Tuple[str, str, np.ndarray]], 
+                                   tags_list: Optional[List[Dict[str, Any]]] = None) -> bool:
+    """Save multiple transcripts with their embeddings to the unified database.
+    
+    Args:
+        transcript_data_list: List of tuples containing (transcript_text, label, embedding)
+        tags_list: Optional list of metadata dictionaries for each transcript
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    if not transcript_data_list:
+        logger.warning("No transcript data provided for batch save")
+        return False
+    
+    try:
+        ensure_embedding_initialized()
+        
+        # Prepare data for unified collection
+        embeddings_data = []
+        skipped_count = 0
+        existing_hashes = load_all_text_hashes()
+        
+        for i, (transcript_text, embedding) in enumerate(transcript_data_list):
+                
+            transcript_hash = get_caption_hash(transcript_text)
+            if transcript_hash in existing_hashes:
+                logger.info(f"Skipping duplicate transcript with hash {transcript_hash}")
+                skipped_count += 1
+                continue
+            
+            # Prepare metadata with label and tags
+            metadata = {
+                "transcript_hash": transcript_hash
+            }
+            
+            # Add custom tags if provided
+            if tags_list and i < len(tags_list):
+                metadata.update(tags_list[i])
+            
+            # Get post_url from tags if available, otherwise use transcript_hash as fallback
+            post_id = tags_list[i].get("post_url", transcript_hash) if tags_list and i < len(tags_list) else transcript_hash
+            
+            embeddings_data.append({
+                "id": f"transcript_{post_id}",  # Prefix with transcript_ to distinguish from captions
+                "embedding": embedding.tolist(),
+                "metadata": metadata,
+                "document": transcript_text
+            })
+        
+        # Save to unified collection if we have any non-duplicate entries
+        if embeddings_data:
+            # Use embedding_type="transcript" for transcript embeddings
+            success = save_embeddings_batch(embeddings_data, embedding_type="transcript")
+            
+            if success:
+                logger.info(f"Saved {len(embeddings_data)} transcript embeddings to unified collection (skipped {skipped_count} duplicates)")
+            
+            return success
+        else:
+            logger.info(f"No new transcripts to save (skipped {skipped_count} duplicates)")
+            return True
+        
+    except Exception as e:
+        logger.error(f"Error saving transcript embeddings batch: {str(e)}")
+        return False
+
+def load_custom_filters(embedding_type: EMBEDDING_TYPES) -> Dict[str, Any]:
+    """
+    Load custom filters from config.yaml and convert them to ChromaDB format.
+    
+    Returns:
+        Dict[str, Any]: Formatted filters ready for ChromaDB operations
+    """
+    logger.info("Loading custom filters from config")
+    
+    try:
+        # Get configuration
+        config = get_config()
+        
+        # Extract custom filters from caption_clustering section
+        custom_filters_config = config.get(f"{embedding_type}_clustering", {}).get('custom_filters', {})
+        
+        # Initialize ChromaDB-compatible filter dict
+        chroma_filters = {}
+        
+        # Process username filters if available
+        if 'username' in custom_filters_config and custom_filters_config['username']:
+            usernames = custom_filters_config['username']
+            if len(usernames) == 1:
+                # Single value filter
+                chroma_filters['username'] = usernames[0]
+            elif len(usernames) > 1:
+                # Multiple values filter (OR condition in ChromaDB)
+                chroma_filters['username'] = {"$in": usernames}
+        return chroma_filters
+
+    except Exception as e:
+        logger.error(f"Error loading custom filters: {str(e)}")
+        return {}

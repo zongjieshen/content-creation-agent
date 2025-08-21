@@ -50,7 +50,6 @@ class GetPostsRequest(BaseModel):
     offset: int = Field(0, description="Offset for pagination")
     order_by: str = Field("taken_at", description="Field to order results by")
     order_dir: str = Field("desc", description="Order direction (asc or desc)")
-    captions_only: bool = Field(False, description="Whether to return only captions")
     is_ad_only: bool = Field(False, description="Whether to return only ads")
 
 class GetPostsResponse(BaseModel):
@@ -67,21 +66,17 @@ class GetTaggedUsersFromAdsResponse(BaseModel):
 class ApplyStyleRequest(BaseModel):
     """Request model for applying style to content"""
     content: str = Field(..., description="Content to be styled")
-    target_label: str = Field("ad", description="Target style label (ad or non-ad)")
+    embedding_type: str = Field(..., description="Embedding type to use, caption or transcript")
     num_examples: int = Field(3, description="Number of similar examples to use")
-    
-    @validator('target_label')
-    def validate_target_label(cls, v):
-        if v not in LABELS:
-            raise ValueError(f"Invalid target_label: {v}. Must be one of {LABELS}")
-        return v
+    filter_tags: Optional[Dict[str, Any]] = Field(None, description="Filter tags for content retrieval")
+
 
 class ApplyStyleResponse(BaseModel):
     """Response model for applying style to content"""
     request_id: str = Field(..., description="Unique identifier for this request")
     original_content: str = Field(..., description="Original content")
     styled_content: str = Field(..., description="Styled content")
-    target_label: str = Field(..., description="Target style label used")
+    embedding_type: str = Field(..., description="Embedding type used")
     status: str = Field(..., description="Status of the operation")
 
 # Fallback responses
@@ -167,7 +162,6 @@ async def get_posts(request: GetPostsRequest):
             offset=request.offset,
             order_by=request.order_by,
             order_dir=request.order_dir,
-            captions_only=request.captions_only,
             is_ad_only=request.is_ad_only
         )
         
@@ -248,21 +242,20 @@ async def apply_style(request: ApplyStyleRequest):
     try:
         # Generate a unique request ID
         request_id = str(uuid4())
-        
-        logger.info(f"Applying {request.target_label} style to content (request_id: {request_id})")
-        
+                
         # Apply style to content using the static function
         styled_content = apply_style_to_content(
             content=request.content,
-            target_label=request.target_label,
-            num_examples=request.num_examples
+            embedding_type=request.embedding_type,
+            num_examples=request.num_examples,
+            filter_tags=request.filter_tags
         )
         
         return ApplyStyleResponse(
             request_id=request_id,
             original_content=request.content,
             styled_content=styled_content,
-            target_label=request.target_label,
+            embedding_type= request.embedding_type,
             status="success"
         )
     

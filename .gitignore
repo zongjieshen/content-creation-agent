@@ -4,3 +4,5 @@
 /build_mac
 /Content Create Dashboard.app
 /dashboard.app
+.env
+.vscode/launch.json

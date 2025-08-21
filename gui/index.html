@@ -68,7 +68,7 @@
                     </div>
                     <div class="nav-item" data-tab="video">
                         <i class="fas fa-video"></i>
-                        <span>Captions</span>
+                        <span>Video Analysis</span>
                     </div>
                 </nav>
             </aside>
@@ -289,19 +289,31 @@
                         
                         <div id="analysis-results" class="results-container" style="display: none;">
                             <div class="results-header">
-                                <h3>Captions</h3>
+                                <h3>Output</h3>
                                 <div class="results-actions">
                                     <button id="copy-results-btn" class="btn btn-secondary">
                                         <i class="fas fa-copy"></i>
-                                        Copy All
+                                        Copy Caption
                                     </button>
                                 </div>
                             </div>
                             
                             <div class="analysis-results-grid">
                                 <div class="result-box full-width">
-                                    <h4>Caption Content</h4>
+                                    <h4>Caption</h4>
                                     <div id="analysis-content" class="result-content"></div>
+                                </div>
+                                
+                                <!-- Transcript Section -->
+                                <div class="result-box full-width" id="transcript-section">
+                                    <div class="transcript-header">
+                                        <h4>Transcript</h4>
+                                        <button id="copy-transcript-btn" class="btn btn-secondary">
+                                            <i class="fas fa-copy"></i>
+                                            Copy Transcript
+                                        </button>
+                                    </div>
+                                    <div id="transcript-content" class="result-content"></div>
                                 </div>
                             </div>
                         </div>

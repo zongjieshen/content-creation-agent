@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const videoStatus = document.getElementById('video-status');
     const analyzeBtn = document.getElementById('generate-captions-btn');
     const copyResultsBtn = document.getElementById('copy-results-btn');
+    const copyTranscriptBtn = document.getElementById('copy-transcript-btn');
     
     // Add toggle switch functionality for target style
     const targetLabelToggle = document.getElementById('target_label');
@@ -49,6 +50,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (copyResultsBtn) {
         copyResultsBtn.addEventListener('click', copyResults);
+    }
+    if (copyTranscriptBtn) {
+        copyTranscriptBtn.addEventListener('click', copyTranscript);
     }
 });
 
@@ -344,6 +348,22 @@ async function analyzeVideo() {
                 .flatMap(p => p.split('\n'))
                 .filter(line => line.trim().startsWith('- '))
                 .map(line => line.trim().substring(2)); // remove "- "
+                
+            // Find transcript if present
+            const transcriptIndex = parts.findIndex(p => p.trim().startsWith('Transcript:') || p.trim().includes('Transcript:'));
+            let transcript = '';
+            if (transcriptIndex !== -1) {
+                // Extract transcript from the current part
+                const transcriptPart = parts[transcriptIndex];
+                // Check if the transcript is in the current part or the next part
+                if (transcriptPart.includes('Transcript:')) {
+                    // Extract transcript from current part (after "Transcript:")
+                    transcript = transcriptPart.split('Transcript:')[1].trim();
+                } else if (transcriptIndex + 1 < parts.length) {
+                    // If not in current part, use the next part
+                    transcript = parts[transcriptIndex + 1].trim();
+                }
+            }
 
             // Build output
             let output = `${title}\n\n`;
@@ -354,7 +374,16 @@ async function analyzeVideo() {
 
             // Display in DOM
             document.getElementById('analysis-content').textContent = output;
+            document.getElementById('transcript-content').textContent = transcript;
             document.getElementById('analysis-results').style.display = 'block';
+            
+            // Show/hide transcript section based on content
+            const transcriptSection = document.getElementById('transcript-section');
+            if (transcript) {
+                transcriptSection.style.display = 'block';
+            } else {
+                transcriptSection.style.display = 'none';
+            }
 
             } else {
                 // Show error
@@ -375,6 +404,52 @@ async function analyzeVideo() {
 function copyResults() {
     const content = document.getElementById('analysis-content').textContent;
     const copyBtn = document.getElementById('copy-results-btn');
+    const originalText = copyBtn.innerHTML;
+    
+    // Create a temporary textarea element
+    const textarea = document.createElement('textarea');
+    textarea.value = content;
+    textarea.style.cssText = 'position:fixed;top:0;left:0;opacity:0;z-index:-1;pointer-events:none;';
+    // Ensure the element is visible on iOS but not disturbing the layout
+    textarea.style.width = '1px';
+    textarea.style.height = '1px';
+    document.body.appendChild(textarea);
+    
+    // Handle iOS devices
+    if (navigator.userAgent.match(/ipad|ipod|iphone/i)) {
+        textarea.contentEditable = true;
+        textarea.readOnly = false;
+        
+        // Create range and select
+        const range = document.createRange();
+        range.selectNodeContents(textarea);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        textarea.setSelectionRange(0, 999999);
+        textarea.focus();
+    } else {
+        textarea.select();
+    }
+    
+    try {
+        document.execCommand('copy');
+        copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        
+        setTimeout(() => {
+            copyBtn.innerHTML = originalText;
+        }, 2000);
+    } catch (err) {
+        console.error('Failed to copy text: ', err);
+    } finally {
+        document.body.removeChild(textarea);
+    }
+}
+
+// Add this new function
+function copyTranscript() {
+    const content = document.getElementById('transcript-content').textContent;
+    const copyBtn = document.getElementById('copy-transcript-btn');
     const originalText = copyBtn.innerHTML;
     
     // Create a temporary textarea element

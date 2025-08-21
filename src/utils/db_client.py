@@ -92,6 +92,8 @@ def initialize_db_schema(force_reset=False):
                 commerciality_status TEXT,
                 has_sponsorship_keywords INTEGER,
                 tagged_users TEXT,
+                video_transcript TEXT,
+                category TEXT,
                 scrape_date TEXT
             )
             """)
