@@ -6,6 +6,7 @@ import time
 import subprocess
 from pathlib import Path
 from http.server import HTTPServer, SimpleHTTPRequestHandler
+import logging
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -95,5 +96,12 @@ def main():
         sys.exit(0)
 
 if __name__ == "__main__":
+    # Configure logging to suppress HTTP request messages
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    
+    # Suppress noisy loggers
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("requests").setLevel(logging.WARNING)
     install_playwright_if_missing()
     main()

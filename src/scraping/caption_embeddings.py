@@ -4,6 +4,8 @@ import logging
 import os
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 from src.utils.gemini_client import get_client
 from src.utils.embedding_client import (
     EMBEDDING_TYPES,
@@ -26,8 +28,9 @@ def get_caption_hash(caption: str) -> str:
     """Generate a hash for a caption."""
     return hashlib.md5(caption.encode('utf-8')).hexdigest()
 
-# Global embeddings cache (kept for performance)
+# Global embeddings cache (kept for performance) with thread lock
 embeddings_cache = {}
+cache_lock = threading.Lock()
 
 def get_embedding(text: str) -> np.ndarray:
     """Get embedding for text, using cache if available."""
@@ -38,8 +41,10 @@ def get_embedding(text: str) -> np.ndarray:
     
     text_hash = get_caption_hash(text)
     
-    if text_hash in embeddings_cache:
-        return np.array(embeddings_cache[text_hash], dtype=np.float32)
+    # Thread-safe cache access
+    with cache_lock:
+        if text_hash in embeddings_cache:
+            return np.array(embeddings_cache[text_hash], dtype=np.float32)
     
     # Generate new embedding
     embedding_model = CLUSTERING_CONFIG.get('embedding_model', 'text-embedding-004')
@@ -49,8 +54,9 @@ def get_embedding(text: str) -> np.ndarray:
     )
     embedding = np.array(result.embeddings[0].values, dtype=np.float32)
     
-    # Cache the embedding
-    embeddings_cache[text_hash] = embedding.tolist()
+    # Thread-safe cache update
+    with cache_lock:
+        embeddings_cache[text_hash] = embedding.tolist()
     
     return embedding
 
@@ -275,21 +281,66 @@ def process_captions(posts_dict: Dict[str, Any]) -> Dict[str, Any]:
     transcript_data_list = []
     tags_list = []
     
-    # Process each post in the dictionary
+    # Prepare data for multithreaded processing
+    caption_tasks = []
+    transcript_tasks = []
+    
     for post_url, post_data in posts_dict.items():
         caption = post_data.get('caption', '')
         transcript = post_data.get('transcript', '')
         tags = post_data.get('tags', {})
         
         tags_list.append(tags)
-
+        
         if caption:
-            embedding = get_embedding(caption)
-            caption_data_list.append((caption, embedding))
+            caption_tasks.append((caption, len(caption_tasks)))
         
         if transcript:
-            transcript_embedding = get_embedding(transcript)
-            transcript_data_list.append((transcript, transcript_embedding))
+            transcript_tasks.append((transcript, len(transcript_tasks)))
+    
+    # Process embeddings with multithreading
+    max_workers = min(32, (len(caption_tasks) + len(transcript_tasks)) or 1)
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit caption embedding tasks
+        caption_futures = {}
+        for caption, index in caption_tasks:
+            future = executor.submit(get_embedding, caption)
+            caption_futures[future] = (caption, index)
+        
+        # Submit transcript embedding tasks
+        transcript_futures = {}
+        for transcript, index in transcript_tasks:
+            future = executor.submit(get_embedding, transcript)
+            transcript_futures[future] = (transcript, index)
+        
+        # Collect caption results
+        caption_results = [None] * len(caption_tasks)
+        for future in as_completed(caption_futures):
+            try:
+                embedding = future.result()
+                caption, index = caption_futures[future]
+                caption_results[index] = (caption, embedding)
+            except Exception as e:
+                caption, index = caption_futures[future]
+                logger.error(f"Error processing caption embedding: {e}")
+                # Skip failed embeddings
+        
+        # Collect transcript results
+        transcript_results = [None] * len(transcript_tasks)
+        for future in as_completed(transcript_futures):
+            try:
+                embedding = future.result()
+                transcript, index = transcript_futures[future]
+                transcript_results[index] = (transcript, embedding)
+            except Exception as e:
+                transcript, index = transcript_futures[future]
+                logger.error(f"Error processing transcript embedding: {e}")
+                # Skip failed embeddings
+    
+    # Filter out None results (failed embeddings)
+    caption_data_list = [result for result in caption_results if result is not None]
+    transcript_data_list = [result for result in transcript_results if result is not None]
     
     # Save all caption embeddings to unified collection in a single batch operation
     caption_success = save_caption_embeddings_batch(caption_data_list, tags_list)
