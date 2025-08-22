@@ -346,7 +346,7 @@ class VideoGeminiWorkflow(BaseWorkflow):
             report = f"{analysis.title}{separator}"
 
             if analysis.location:
-                report += f"{analysis.location}{separator}"
+                report += f"📍 location: {analysis.location}{separator}"
                 
             for hashtag in analysis.hashtags:
                 report += f"- {hashtag.tag}\n"

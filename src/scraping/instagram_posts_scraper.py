@@ -232,13 +232,16 @@ class InstagramPostsScraper:
             await asyncio.gather(*tasks)
             logger.info(f"Completed processing transcripts for all {len(video_posts)} video posts")
     
-    async def scrape_user_posts(self, username: str, max_limit: int = 50, stop_event: Optional[asyncio.Event] = None) -> List[Dict[str, Any]]:
+    async def scrape_user_posts(self, username: str, max_limit: int = 50, stop_event: Optional[asyncio.Event] = None, process_transcripts: bool = True) -> List[Dict[str, Any]]:
+
         """Scrape posts from an Instagram user.
         
         Args:
             username (str): Instagram username
             max_limit (int): Maximum number of posts to scrape
             stop_event (asyncio.Event, optional): Event to check for cancellation
+            process_transcripts (bool, optional): Whether to process video transcripts
+
             
         Returns:
             List[Dict]: List of post data
@@ -323,7 +326,7 @@ class InstagramPostsScraper:
                 return all_posts
         
         # After collecting all posts, process video transcripts in parallel
-        if all_posts:
+        if all_posts and process_transcripts:
             logger.info(f"Processing video transcripts for {len(all_posts)} posts using multi-threading")
             await self.process_video_transcripts(all_posts, stop_event)
         

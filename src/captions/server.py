@@ -116,6 +116,21 @@ async def health_check():
     """Perform a Health Check"""
     return HealthResponse(message="Video analysis server is up and running.")
 
+@app.post("/reload_config", tags=["Configuration"])
+async def reload_config():
+    """Reload the configuration from disk"""
+    try:
+        # Import and clear the config cache
+        from src.utils.config_loader import get_config
+        get_config.cache_clear()
+        
+        # Reinitialize any services that depend on the config
+        
+        return {"status": "success", "message": "Configuration reloaded successfully"}
+    except Exception as e:
+        logger.error(f"Error reloading configuration: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error reloading configuration: {str(e)}")
+
 @app.post("/upload_video", tags=["Video Upload"], response_model=FileUploadResponse)
 async def upload_video(file: UploadFile = File(...)):
     """Upload a video file for analysis"""

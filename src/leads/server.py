@@ -8,6 +8,7 @@ from typing import List, Dict, Any, Optional
 from traceback import print_exc
 # Add these imports at the top of the file
 import yaml
+import httpx
 from fastapi import FastAPI, Request, HTTPException, Response, File, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -627,7 +628,7 @@ async def get_config():
 
 @app.post("/save_config", tags=["Configuration"], response_model=ConfigResponse)
 async def save_config(request: SaveConfigRequest):
-    """Save updated content to the config.yaml file"""
+    """Save updated content to the config.yaml file and notify other services"""
     try:
         # Get the path to the config file
         config_path = get_resource_path("config.yaml")
@@ -653,9 +654,12 @@ async def save_config(request: SaveConfigRequest):
             
         initialize_client()
         
+        # Notify other services to reload their configuration
+        notification_results = await notify_services_config_changed()
+        
         return ConfigResponse(
             config_content=request.config_content,
-            message="Configuration saved successfully and API client reinitialized"
+            message=f"Configuration saved successfully and services notified: {notification_results}"
         )
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -663,6 +667,36 @@ async def save_config(request: SaveConfigRequest):
     except Exception as e:
         logger.error(f"Error saving config file: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error saving config file: {str(e)}")
+
+
+async def notify_services_config_changed():
+    """Notify all other services that the configuration has changed"""
+    # Get the current hostname from the request context
+    hostname = "localhost"  # Default to localhost
+    
+    # Define the services to notify
+    services = [
+        {"name": "scraping", "url": f"http://{hostname}:8002/reload_config"},
+        {"name": "captions", "url": f"http://{hostname}:8005/reload_config"},
+        # GUI server doesn't need notification as it doesn't cache config
+    ]
+    
+    results = {}
+    
+    # Create an async HTTP client
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        for service in services:
+            try:
+                response = await client.post(service["url"])
+                if response.status_code == 200:
+                    results[service["name"]] = "success"
+                else:
+                    results[service["name"]] = f"failed: {response.status_code}"
+            except Exception as e:
+                logger.error(f"Error notifying {service['name']} service: {str(e)}")
+                results[service["name"]] = f"error: {str(e)}"
+    
+    return results
 
 def main():
     """Main function to run the server with Windows ProactorEventLoop"""
@@ -689,3 +723,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
